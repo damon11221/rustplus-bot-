@@ -858,6 +858,18 @@ client.once('ready', async () => {
 });
 
 // ─── START ────────────────────────────────────────────────────────────────────
+// Safety debug: verify env vars are present (does NOT print the token itself)
+(function debugEnv() {
+  const t = C.discord.token;
+  const masked = (t && t.length >= 6) ? `${t.slice(0,2)}***${t.slice(-2)}` : '(missing)';
+  console.log(`[Env] DISCORD_TOKEN present: ${!!t} | length: ${t ? t.length : 0} | masked: ${masked}`);
+  console.log(`[Env] DISCORD_CLIENT_ID present: ${!!C.discord.clientId} | DISCORD_GUILD_ID present: ${!!C.discord.guildId}`);
+  if (!t) {
+    console.error('[Discord] DISCORD_TOKEN is missing in environment variables. Set it in Railway → Service → Variables.');
+  } else if (!t.includes('.') || t.split('.').length < 3) {
+    console.error('[Discord] DISCORD_TOKEN does not look like a Discord bot token (should contain 2 dots). Re-copy from Discord Developer Portal → Bot → Token.');
+  }
+})();
 client.login(C.discord.token).catch(err => {
   console.error('[Discord] Login failed:', err.message);
   process.exit(1);
