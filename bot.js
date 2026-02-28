@@ -341,19 +341,16 @@ function buildState() {
     grid:    m.isOnline ? getGrid(m.x, m.y) : '—',
   }));
 
-  const envServerName = process.env.RUST_SERVER_NAME;
-  const envGamePort = parseInt(process.env.RUST_GAME_PORT);
-  const gamePort = Number.isFinite(envGamePort) ? envGamePort : null;
-
   return {
     connected:     rustConnected,
     botReady:      true,
-    serverName:    envServerName || serverInfo.name || C.rust.ip || 'Unknown',
-    serverIp:      C.rust.ip               || '—',
-    serverPort:    gamePort || C.rust.port,
+    serverName:    (process.env.RUST_SERVER_NAME && process.env.RUST_SERVER_NAME.trim()) || serverInfo.name || C.rust.ip || 'Unknown',
+    serverIp:      C.rust.ip || '—',
+    // Note: C.rust.port is the Rust+ companion port (usually 28082).
+    // If you want the dashboard to show the GAME port (usually 28015), set RUST_GAME_PORT in .env.
+    serverPort:    (process.env.RUST_GAME_PORT ? parseInt(process.env.RUST_GAME_PORT) : null) || C.rust.port,
     rustPlusPort:  C.rust.port,
-    gamePort:      gamePort,
-    serverInfoRaw: serverInfo,
+    gamePort:      (process.env.RUST_GAME_PORT ? parseInt(process.env.RUST_GAME_PORT) : null) || null,
     mapSize:       serverInfo.mapSize       || '—',
     seed:          serverInfo.seed          || '—',
     wipeTime:      serverInfo.wipeTime      || null,
