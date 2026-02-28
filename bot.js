@@ -1,31 +1,90 @@
+// ─── PROTO CRASH PROTECTION ──────────────────────────────────────────────────
+// Rust servers omit proto "required" fields (spawnTime, isOnline, queuedPlayers etc.)
+// causing protobufjs to throw ProtocolError and crash the process.
+//
+// Fix 1: Patch rustplus.proto on disk — required → optional — before RustPlus loads.
+// Fix 2: Catch any ProtocolError that still slips through and keep the process alive.
+;(function protoCrashProtection() {
+  const fs   = require('fs');
+  const path = require('path');
+
+  // ── Fix 1: patch proto file ──
+  const protoPath = path.join(
+    __dirname, 'node_modules', '@liamcottle', 'rustplus.js', 'rustplus.proto'
+  );
+  try {
+    if (fs.existsSync(protoPath)) {
+      const src = fs.readFileSync(protoPath, 'utf8');
+      if (/\brequired\b/.test(src)) {
+        fs.writeFileSync(protoPath, src.replace(/\brequired\b(\s+)/g, 'optional$1'), 'utf8');
+        console.log(`[patch] ✓ Proto patched (${(src.match(/\brequired\b/g)||[]).length} fields)`);
+      } else {
+        console.log('[patch] Proto already clean');
+      }
+    } else {
+      console.warn('[patch] Proto file not found — Fix 2 will handle crashes');
+    }
+  } catch (e) {
+    console.warn('[patch] Disk patch failed:', e.message, '— Fix 2 will handle crashes');
+  }
+
+  // ── Fix 2: swallow ProtocolError uncaught exceptions so the bot never exits ──
+  // If Fix 1 didn't catch something (cached .js, different proto path, etc.)
+  // this ensures the process keeps running — it just logs the error and moves on.
+  process.on('uncaughtException', (err) => {
+    if (err && (err.name === 'ProtocolError' || (err.message && err.message.includes("missing required")))) {
+      console.warn(`[proto] Ignored ProtocolError (missing field): ${err.message}`);
+      return; // swallow — do NOT exit
+    }
+    // All other real uncaught errors: log and exit as normal
+    console.error('[FATAL] Uncaught exception:', err);
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    if (reason && (reason.name === 'ProtocolError' || String(reason.message||'').includes("missing required"))) {
+      console.warn(`[proto] Ignored ProtocolError rejection: ${reason.message}`);
+      return;
+    }
+    console.error('[FATAL] Unhandled rejection:', reason);
+    process.exit(1);
+  });
+
+  console.log('[patch] ✓ ProtocolError crash guard active');
+})();
+
 require('dotenv').config();
 const {
-  Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder,
-  ButtonStyle, SlashCommandBuilder, REST, Routes, PermissionsBitField
+  Client, GatewayIntentBits, EmbedBuilder,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  SlashCommandBuilder, REST, Routes,
 } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
-const RustPlus = require('@liamcottle/rustplus.js');
-const http = require('http');
-const WebSocket = require('ws');
+const {
+  joinVoiceChannel, createAudioPlayer, createAudioResource,
+  AudioPlayerStatus, VoiceConnectionStatus,
+} = require('@discordjs/voice');
+const RustPlus  = require('@liamcottle/rustplus.js');
 const { execSync } = require('child_process');
-const fs = require('fs');
+const fs   = require('fs');
+const http = require('http');
+const WSLib = require('ws');
 
-// ─── CONFIG ────────────────────────────────────────────────────────────────────
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
 const C = {
   discord: {
-    token:     process.env.DISCORD_TOKEN,
-    clientId:  process.env.DISCORD_CLIENT_ID,
-    guildId:   process.env.DISCORD_GUILD_ID,
+    token:    process.env.DISCORD_TOKEN,
+    clientId: process.env.DISCORD_CLIENT_ID,
+    guildId:  process.env.DISCORD_GUILD_ID,
     channels: {
-      raids:     process.env.CHANNEL_RAIDS,
-      alarms:    process.env.CHANNEL_ALARMS,
-      deaths:    process.env.CHANNEL_DEATHS,
-      events:    process.env.CHANNEL_EVENTS,
-      teamChat:  process.env.CHANNEL_TEAM_CHAT,
-      switches:  process.env.CHANNEL_SWITCHES,
-      log:       process.env.CHANNEL_LOG,
-      wipe:      process.env.CHANNEL_WIPE,
-    }
+      raids:    process.env.CHANNEL_RAIDS,
+      alarms:   process.env.CHANNEL_ALARMS,
+      deaths:   process.env.CHANNEL_DEATHS,
+      events:   process.env.CHANNEL_EVENTS,
+      teamChat: process.env.CHANNEL_TEAM_CHAT,
+      switches: process.env.CHANNEL_SWITCHES,
+      log:      process.env.CHANNEL_LOG,
+      wipe:     process.env.CHANNEL_WIPE,
+    },
   },
   rust: {
     ip:      process.env.RUST_IP,
@@ -34,111 +93,43 @@ const C = {
     token:   process.env.PLAYER_TOKEN,
   },
   voice: {
-    channelId: process.env.VOICE_CHANNEL_ID,
-    volume:    parseInt(process.env.TTS_VOLUME) || 80,
-    autoJoin:  process.env.VOICE_AUTO_JOIN !== 'false',
-    autoLeave: process.env.VOICE_AUTO_LEAVE !== 'false',
-    msgTemplate: process.env.TTS_TEMPLATE || 'WARNING! {alarm_name} has been triggered at grid {grid}!',
+    channelId:   process.env.VOICE_CHANNEL_ID,
+    volume:      parseInt(process.env.TTS_VOLUME) || 80,
+    autoJoin:    process.env.VOICE_AUTO_JOIN  !== 'false',
+    autoLeave:   process.env.VOICE_AUTO_LEAVE !== 'false',
+    msgTemplate: process.env.TTS_TEMPLATE || 'WARNING! {alarm_name} triggered at grid {grid}!',
   },
   alerts: {
-    raids:      process.env.ALERT_RAIDS     !== 'false',
-    alarms:     process.env.ALERT_ALARMS    !== 'false',
-    teamChat:   process.env.ALERT_TEAMCHAT  !== 'false',
-    deaths:     process.env.ALERT_DEATHS    !== 'false',
-    events:     process.env.ALERT_EVENTS    !== 'false',
-    wipe:       process.env.ALERT_WIPE      !== 'false',
-    playerJoin: process.env.ALERT_JOINS     === 'true',
-    deathInChat:  process.env.DEATH_IN_TEAM_CHAT  !== 'false',
-    alarmInChat:  process.env.ALARM_IN_TEAM_CHAT  !== 'false',
-    voiceRaids:   process.env.VOICE_RAIDS   !== 'false',
-    voiceAlarms:  process.env.VOICE_ALARMS  !== 'false',
-    voiceDeaths:  process.env.VOICE_DEATHS  === 'true',
-    voiceEvents:  process.env.VOICE_EVENTS  !== 'false',
+    raids:       process.env.ALERT_RAIDS        !== 'false',
+    alarms:      process.env.ALERT_ALARMS       !== 'false',
+    teamChat:    process.env.ALERT_TEAMCHAT     !== 'false',
+    deaths:      process.env.ALERT_DEATHS       !== 'false',
+    events:      process.env.ALERT_EVENTS       !== 'false',
+    wipe:        process.env.ALERT_WIPE         !== 'false',
+    playerJoin:  process.env.ALERT_JOINS        === 'true',
+    deathInChat: process.env.DEATH_IN_TEAM_CHAT !== 'false',
+    alarmInChat: process.env.ALARM_IN_TEAM_CHAT !== 'false',
+    voiceRaids:  process.env.VOICE_RAIDS        !== 'false',
+    voiceAlarms: process.env.VOICE_ALARMS       !== 'false',
+    voiceDeaths: process.env.VOICE_DEATHS       === 'true',
   },
   wipeDate: process.env.WIPE_DATE ? new Date(process.env.WIPE_DATE) : null,
+  wsPort:   parseInt(process.env.PORT) || 3000,
 };
 
-// ─── DASHBOARD HTTP + WEBSOCKET (Railway) ───────────────────────────────────
-const PORT = Number(process.env.PORT || 3000);
-
-// Very small HTTP server (health + serves index.html if present)
-const server = http.createServer((req, res) => {
-  if (req.url === '/' || req.url === '/health' || req.url === '/status') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    return res.end('RustLink OK');
-  }
-  res.writeHead(404, { 'Content-Type': 'text/plain' });
-  res.end('Not Found');
-});
-
-const wss = new WebSocket.Server({ server });
-const wsClients = new Set();
-
-function snapshotState() {
-  const switches = Array.from(knownSwitches.entries()).map(([id, sw]) => ({
-    id, ...sw, state: entityStates[id] ?? false
-  }));
-  const alarms = Array.from(knownAlarms.entries()).map(([id, a]) => ({ id, ...a }));
-  return {
-    type: 'state',
-    server: lastServerInfo || null,
-    team: lastTeamInfo || null,
-    switches,
-    alarms,
-    ts: Date.now()
-  };
-}
-
-function wsBroadcast(obj) {
-  const msg = JSON.stringify(obj);
-  for (const ws of wsClients) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
-  }
-}
-
-wss.on('connection', (ws) => {
-  wsClients.add(ws);
-  // Send initial snapshot
-  try { ws.send(JSON.stringify(snapshotState())); } catch {}
-  ws.on('close', () => wsClients.delete(ws));
-  ws.on('message', async (raw) => {
-    let m;
-    try { m = JSON.parse(String(raw || '')); } catch { return; }
-
-    // Client can request fresh snapshot
-    if (m?.type === 'get_state') {
-      try { ws.send(JSON.stringify(snapshotState())); } catch {}
-      return;
-    }
-
-    // Toggle a switch: {type:'set_switch', id, value:true/false}
-    if (m?.type === 'set_switch' && m.id) {
-      const ok = await setEntityValue(m.id, !!m.value);
-      wsBroadcast({ type: 'switch_update', id: m.id, state: entityStates[m.id] ?? false, ok, ts: Date.now() });
-      return;
-    }
-  });
-});
-
-server.listen(PORT, () => console.log(`[Web] HTTP/WS listening on :${PORT}`));
-
-
-// ─── ROLE RULES ─────────────────────────────────────────────────────────────
-// Format: KEYWORD:roleId,KEYWORD:roleId
+// ─── ROLE RULES ───────────────────────────────────────────────────────────────
 const roleRules = [];
 if (process.env.ROLE_RULES) {
   process.env.ROLE_RULES.split(',').forEach(pair => {
-    const [kw, roleId, channelOverride] = pair.split(':');
-    if (kw && roleId) roleRules.push({ keyword: kw.trim().toUpperCase(), roleId: roleId.trim(), channelOverride: channelOverride?.trim() || null, enabled: true });
+    const [kw, roleId, ch] = pair.split(':');
+    if (kw && roleId) roleRules.push({ keyword: kw.trim().toUpperCase(), roleId: roleId.trim(), channelOverride: ch?.trim()||null, enabled: true });
   });
 }
 
-// ─── ENTITY STORES ──────────────────────────────────────────────────────────
-const knownSwitches = new Map(); // entityId -> { name, icon, inPanel }
-const knownAlarms   = new Map(); // entityId -> { name, voice, teamChat, roleId }
+// ─── ENTITY STORES ───────────────────────────────────────────────────────────
+const knownSwitches = new Map();
+const knownAlarms   = new Map();
 const entityStates  = {};
-const popHistory    = []; // { time, count } last 30 min
-let   popLog30m     = { joined: 0, left: 0, snapshots: [] };
 
 if (process.env.SWITCHES) {
   process.env.SWITCHES.split(',').forEach(p => {
@@ -149,118 +140,322 @@ if (process.env.SWITCHES) {
 if (process.env.ALARMS) {
   process.env.ALARMS.split(',').forEach(p => {
     const [name, id, roleId] = p.split(':');
-    if (name && id) knownAlarms.set(id.trim(), { name: name.trim(), voice: true, teamChat: true, roleId: roleId?.trim() || null });
+    if (name && id) knownAlarms.set(id.trim(), { name: name.trim(), voice: true, teamChat: true, roleId: roleId?.trim()||null });
   });
 }
 
-// ─── STATE ──────────────────────────────────────────────────────────────────
+// ─── SPY TRACKER ─────────────────────────────────────────────────────────────
+// watchedPlayers: steamId → { steamId, name, addedAt, online, totalMs, currentSessionStart, sessions[] }
+const watchedPlayers   = new Map();
+const allServerPlayers = new Map(); // steamId → { name, online }
+
+function steamIdStr(raw) {
+  if (!raw) return '';
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'object' && raw.toString) return raw.toString();
+  return String(raw);
+}
+
+function addWatch(steamId, name) {
+  const key = steamIdStr(steamId);
+  if (!key) return { ok: false, msg: 'Invalid Steam ID' };
+  if (watchedPlayers.has(key)) return { ok: false, msg: `Already watching ${name}` };
+  watchedPlayers.set(key, { steamId: key, name, addedAt: Date.now(), online: false, totalMs: 0, currentSessionStart: null, sessions: [] });
+  console.log(`[Spy] Watching: ${name} (${key})`);
+  return { ok: true };
+}
+
+function removeWatch(steamId) {
+  watchedPlayers.delete(steamIdStr(steamId));
+}
+
+function updateSpyFromTeam(members) {
+  if (!Array.isArray(members)) return;
+  members.forEach(m => {
+    const key     = steamIdStr(m.steamId);
+    const nowOnline = !!(m.isOnline);
+    allServerPlayers.set(key, { name: m.name || 'Unknown', online: nowOnline });
+
+    if (!watchedPlayers.has(key)) return;
+    const wp = watchedPlayers.get(key);
+    wp.name  = m.name || wp.name;
+    const wasOnline = wp.online;
+    wp.online = nowOnline;
+
+    if (!wasOnline && nowOnline) {
+      wp.currentSessionStart = Date.now();
+      console.log(`[Spy] ${wp.name} ONLINE`);
+      wsBroadcast({ type: 'spyEvent', steamId: key, name: wp.name, event: 'online' });
+      pushAlert({ type: 'spy', icon: '👁', title: `${wp.name} is ONLINE`, detail: 'Watched player came online' });
+    } else if (wasOnline && !nowOnline) {
+      if (wp.currentSessionStart) {
+        const ms = Date.now() - wp.currentSessionStart;
+        wp.sessions.push({ start: wp.currentSessionStart, end: Date.now(), ms });
+        wp.totalMs += ms;
+        wp.currentSessionStart = null;
+      }
+      console.log(`[Spy] ${wp.name} OFFLINE`);
+      wsBroadcast({ type: 'spyEvent', steamId: key, name: wp.name, event: 'offline' });
+      pushAlert({ type: 'spy', icon: '👁', title: `${wp.name} went OFFLINE`, detail: '' });
+    }
+  });
+}
+
+function buildSpyData() {
+  const watched = [];
+  watchedPlayers.forEach((wp, key) => {
+    const liveSesh = wp.currentSessionStart ? Date.now() - wp.currentSessionStart : 0;
+    const totalMs  = wp.totalMs + liveSesh;
+    watched.push({
+      steamId:    key,
+      name:       wp.name,
+      online:     wp.online,
+      addedAt:    wp.addedAt,
+      totalMs,
+      totalHours: Math.floor(totalMs / 3600000),
+      totalMins:  Math.floor((totalMs % 3600000) / 60000),
+      sessions:   wp.sessions.length,
+      lastSeen:   wp.sessions.length ? wp.sessions[wp.sessions.length - 1].end : null,
+    });
+  });
+  watched.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0) || a.name.localeCompare(b.name));
+
+  const allPlayers = [];
+  allServerPlayers.forEach((p, key) => {
+    allPlayers.push({ steamId: key, name: p.name, online: p.online, watched: watchedPlayers.has(key) });
+  });
+  allPlayers.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0) || a.name.localeCompare(b.name));
+
+  return { watched, allPlayers };
+}
+
+// ─── RUNTIME STATE ───────────────────────────────────────────────────────────
 let rustplus      = null;
+let rustConnected = false;
 let serverInfo    = {};
 let teamInfo      = {};
-let switchPanelMsgId = null;
+let panelMsgId    = null;
 let voiceConn     = null;
 const audioPlayer = createAudioPlayer();
-let   ttsQueue    = [];
-let   ttsPlaying  = false;
-let   prevPlayerList = [];
+let ttsQueue      = [];
+let ttsPlaying    = false;
+let popHistory    = [];
+let popLog30m     = { joined: 0, left: 0 };
+let prevPop       = 0;
+let prevTeamMap   = {};
+let popTracking   = false;
+
+const liveAlerts   = [];   // last 100
+const liveChatMsgs = [];   // last 60
 
 // ─── DISCORD CLIENT ──────────────────────────────────────────────────────────
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent]
+const discord = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
-// ─── EMBED BUILDER ───────────────────────────────────────────────────────────
-function embed(title, desc, color = 0xCE422B, fields = []) {
+// ─── HTTP + WS SERVER ────────────────────────────────────────────────────────
+const httpServer = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('RustLink OK\n');
+});
+const wss       = new WSLib.Server({ server: httpServer });
+const wsClients = new Set();
+
+wss.on('connection', ws => {
+  console.log('[WS] Dashboard connected');
+  wsClients.add(ws);
+  send(ws, { type: 'fullState', data: buildState() });
+  ws.on('message', raw => { try { handleDashMsg(ws, JSON.parse(raw)); } catch {} });
+  ws.on('close',   () => wsClients.delete(ws));
+  ws.on('error',   () => wsClients.delete(ws));
+});
+
+function send(ws, obj) {
+  try { if (ws.readyState === WSLib.OPEN) ws.send(JSON.stringify(obj)); } catch {}
+}
+
+function wsBroadcast(obj) {
+  const s = JSON.stringify(obj);
+  wsClients.forEach(ws => { try { if (ws.readyState === WSLib.OPEN) ws.send(s); } catch {} });
+}
+
+// ─── DASHBOARD MESSAGES ──────────────────────────────────────────────────────
+async function handleDashMsg(ws, msg) {
+  switch (msg.type) {
+
+    case 'toggleSwitch': {
+      if (!rustConnected) { send(ws, { type: 'error', message: 'Bot not connected to Rust+' }); return; }
+      const ok = await setEntity(msg.entityId, msg.value);
+      if (ok) wsBroadcast({ type: 'switchToggled', entityId: msg.entityId, value: msg.value });
+      else send(ws, { type: 'error', message: 'Toggle failed' });
+      break;
+    }
+
+    case 'sendTeamChat': {
+      if (!rustConnected || !msg.message) return;
+      try { await rustplus.sendTeamMessage(msg.message); addChat('Dashboard', msg.message); }
+      catch (e) { send(ws, { type: 'error', message: 'Chat failed: ' + e.message }); }
+      break;
+    }
+
+    case 'addSpy': {
+      const r = addWatch(msg.steamId, msg.name || 'Unknown');
+      send(ws, { type: 'spyResult', ok: r.ok, msg: r.msg });
+      if (r.ok) pushState();
+      break;
+    }
+
+    case 'removeSpy': {
+      removeWatch(msg.steamId);
+      pushState();
+      break;
+    }
+
+    case 'requestState':
+      send(ws, { type: 'fullState', data: buildState() });
+      break;
+  }
+}
+
+// ─── STATE BUILDER ────────────────────────────────────────────────────────────
+function buildState() {
+  const switches = [];
+  for (const [id, sw] of knownSwitches) {
+    switches.push({ id, name: sw.name, icon: sw.icon || '⚡', on: entityStates[id] ?? false, inPanel: sw.inPanel });
+  }
+  const alarms = [];
+  for (const [id, alm] of knownAlarms) {
+    alarms.push({ id, name: alm.name, voice: alm.voice, teamChat: alm.teamChat });
+  }
+  const team = (teamInfo?.members || []).map(m => ({
+    name:    m.name || 'Unknown',
+    steamId: steamIdStr(m.steamId),
+    online:  !!(m.isOnline),
+    alive:   m.isAlive !== false,
+    hp:      Math.round(m.health || 0),
+    grid:    m.isOnline ? getGrid(m.x, m.y) : '—',
+  }));
+
+  return {
+    connected:     rustConnected,
+    botReady:      true,
+    serverName:    serverInfo.name          || C.rust.ip || 'Unknown',
+    serverIp:      C.rust.ip               || '—',
+    serverPort:    C.rust.port,
+    mapSize:       serverInfo.mapSize       || '—',
+    seed:          serverInfo.seed          || '—',
+    wipeTime:      serverInfo.wipeTime      || null,
+    wipeDate:      C.wipeDate ? C.wipeDate.toISOString() : null,
+    players:       serverInfo.players       || 0,
+    maxPlayers:    serverInfo.maxPlayers    || 0,
+    queuedPlayers: serverInfo.queuedPlayers || 0,
+    gameTime:      serverInfo.time          || '—',
+    team,
+    switches,
+    alarms,
+    alerts:        liveAlerts.slice(0, 50),
+    chatMessages:  liveChatMsgs.slice(0, 30),
+    pop: {
+      current:   serverInfo.players    || 0,
+      max:       serverInfo.maxPlayers || 0,
+      queued:    serverInfo.queuedPlayers || 0,
+      joined30m: popLog30m.joined,
+      left30m:   popLog30m.left,
+      history:   popHistory.slice(-20).map(p => ({ t: p.time, v: p.count })),
+    },
+    botTag:    discord.user?.tag || 'Connecting…',
+    spy:       buildSpyData(),
+    lastUpdate: Date.now(),
+  };
+}
+
+function pushState() {
+  wsBroadcast({ type: 'stateUpdate', data: buildState() });
+}
+
+function pushAlert(a) {
+  liveAlerts.unshift({ ...a, ts: Date.now() });
+  if (liveAlerts.length > 100) liveAlerts.pop();
+  wsBroadcast({ type: 'alert', data: { ...a, ts: Date.now() } });
+}
+
+function addChat(name, text) {
+  liveChatMsgs.unshift({ name, text, ts: Date.now() });
+  if (liveChatMsgs.length > 60) liveChatMsgs.pop();
+  wsBroadcast({ type: 'chatMessage', data: { name, text, ts: Date.now() } });
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function mkEmbed(title, desc, color = 0xCE422B, fields = []) {
   const e = new EmbedBuilder().setColor(color).setTitle(title).setTimestamp();
   if (desc) e.setDescription(desc);
   if (fields.length) e.addFields(fields);
   return e;
 }
 
-// ─── CHANNEL SENDER ──────────────────────────────────────────────────────────
 async function sendTo(type, payload) {
   const id = C.discord.channels[type];
   if (!id) return;
-  try {
-    const ch = await client.channels.fetch(id);
-    return await ch.send(payload);
-  } catch (e) { console.error(`[sendTo:${type}]`, e.message); }
+  try { const ch = await discord.channels.fetch(id); return await ch.send(payload); }
+  catch (e) { console.error(`[ch:${type}]`, e.message); }
 }
 
-// ─── ROLE PING ───────────────────────────────────────────────────────────────
-function getPingForKeyword(keyword) {
-  const rule = roleRules.find(r => r.enabled && r.keyword === keyword.toUpperCase());
-  return rule ? `<@&${rule.roleId}> ` : '';
+function getPing(kw) {
+  const r = roleRules.find(r => r.enabled && r.keyword === kw.toUpperCase());
+  return r ? `<@&${r.roleId}> ` : '';
 }
 
-// ─── TTS VOICE ───────────────────────────────────────────────────────────────
-async function ensureVoiceJoined() {
+function getGrid(x, y) {
+  if (!x && !y) return '?';
+  const s = serverInfo.mapSize || 4500;
+  return String.fromCharCode(65 + Math.floor(x / (s / 26))) + (Math.floor(y / (s / 26)) + 1);
+}
+
+// ─── TTS ─────────────────────────────────────────────────────────────────────
+async function ensureVoice() {
   if (voiceConn && voiceConn.state.status !== VoiceConnectionStatus.Destroyed) return voiceConn;
   if (!C.voice.channelId) return null;
   try {
-    const guild = await client.guilds.fetch(C.discord.guildId);
-    const channel = await guild.channels.fetch(C.voice.channelId);
-    if (!channel.isVoiceBased()) return null;
-    voiceConn = joinVoiceChannel({ channelId: channel.id, guildId: guild.id, adapterCreator: guild.voiceAdapterCreator });
+    const guild = await discord.guilds.fetch(C.discord.guildId);
+    const ch    = await guild.channels.fetch(C.voice.channelId);
+    if (!ch.isVoiceBased()) return null;
+    voiceConn = joinVoiceChannel({ channelId: ch.id, guildId: guild.id, adapterCreator: guild.voiceAdapterCreator });
     voiceConn.subscribe(audioPlayer);
-    console.log(`[Voice] Joined channel: ${channel.name}`);
     return voiceConn;
-  } catch (e) { console.error('[Voice] Join failed:', e.message); return null; }
+  } catch (e) { console.error('[Voice]', e.message); return null; }
 }
 
-async function speakTTS(text) {
-  ttsQueue.push(text);
-  if (!ttsPlaying) processTTSQueue();
-}
+async function speakTTS(text) { ttsQueue.push(text); if (!ttsPlaying) drainTTS(); }
 
-async function processTTSQueue() {
-  if (ttsQueue.length === 0) {
+async function drainTTS() {
+  if (!ttsQueue.length) {
     ttsPlaying = false;
-    if (C.voice.autoLeave) {
-      setTimeout(() => { if (voiceConn) { voiceConn.destroy(); voiceConn = null; } }, 30000);
-    }
+    if (C.voice.autoLeave) setTimeout(() => { if (voiceConn) { voiceConn.destroy(); voiceConn = null; } }, 30000);
     return;
   }
   ttsPlaying = true;
   const text = ttsQueue.shift();
-  const conn = await ensureVoiceJoined();
+  const conn = await ensureVoice();
   if (!conn) { ttsPlaying = false; return; }
-
   try {
-    // Generate TTS audio using espeak or system TTS
-    const tmpFile = '/tmp/rustlink_tts_' + Date.now() + '.wav';
-    try {
-      execSync(`espeak "${text.replace(/"/g, "'")}" -w ${tmpFile} --rate=140 2>/dev/null`);
-    } catch {
-      // Fallback: use say (macOS) or festival
-      try { execSync(`echo "${text.replace(/"/g, "'")}" | festival --tts 2>/dev/null`); } catch {}
-    }
-
-    if (fs.existsSync(tmpFile)) {
-      const resource = createAudioResource(tmpFile);
-      audioPlayer.play(resource);
-      audioPlayer.once(AudioPlayerStatus.Idle, () => {
-        fs.unlinkSync(tmpFile);
-        setTimeout(processTTSQueue, 500);
-      });
-    } else {
-      ttsPlaying = false;
-    }
-  } catch (e) {
-    console.error('[TTS] Error:', e.message);
-    ttsPlaying = false;
-    setTimeout(processTTSQueue, 500);
-  }
+    const tmp = '/tmp/rl_' + Date.now() + '.wav';
+    try { execSync(`espeak "${text.replace(/"/g,"'")}" -w ${tmp} --rate=140 2>/dev/null`); } catch {}
+    if (fs.existsSync(tmp)) {
+      audioPlayer.play(createAudioResource(tmp));
+      audioPlayer.once(AudioPlayerStatus.Idle, () => { try { fs.unlinkSync(tmp); } catch {} setTimeout(drainTTS, 400); });
+    } else { ttsPlaying = false; setTimeout(drainTTS, 400); }
+  } catch { ttsPlaying = false; setTimeout(drainTTS, 400); }
 }
 
-function buildTTSMsg(template, vars) {
-  return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] || k);
-}
-
-// ─── RUST+ CLIENT ────────────────────────────────────────────────────────────
-function createRustClient() {
+// ─── RUST+ ───────────────────────────────────────────────────────────────────
+function startRustClient() {
   if (!C.rust.ip || !C.rust.steamId || !C.rust.token) {
-    console.warn('[Rust+] Missing credentials — set RUST_IP, STEAM_ID, PLAYER_TOKEN');
+    console.warn('[Rust+] Missing RUST_IP / STEAM_ID / PLAYER_TOKEN env vars');
     return;
   }
 
@@ -268,665 +463,406 @@ function createRustClient() {
 
   rustplus.on('connected', async () => {
     console.log('[Rust+] Connected!');
-    await refreshServerInfo();
-    await refreshTeamInfo();
-    sendTo('log', { embeds: [embed('🔗 Rust Link Connected', `Now monitoring **${serverInfo.name || C.rust.ip}**`, 0x3DDC84)] });
-    startPopTracker();
+    rustConnected = true;
+    try { await refreshServer(); } catch (e) { console.error('[refreshServer]', e.message); }
+    try {
+      const t = await refreshTeam();
+      if (t?.members) updateSpyFromTeam(t.members);
+    } catch (e) { console.error('[refreshTeam]', e.message); }
+    sendTo('log', { embeds: [mkEmbed('🔗 Connected', `Monitoring **${serverInfo.name || C.rust.ip}**`, 0x3DDC84)] });
+    startPop();
     scheduleWipeReminders();
-    await updateSwitchPanel();
+    try { await updatePanel(); } catch {}
+    pushAlert({ type: 'info', icon: '🔗', title: 'Bot Connected', detail: serverInfo.name || C.rust.ip });
+    pushState();
   });
 
   rustplus.on('disconnected', () => {
-    console.warn('[Rust+] Disconnected — retrying in 15s');
-    sendTo('log', { embeds: [embed('🔌 Disconnected', 'Reconnecting in 15 seconds…', 0xCE422B)] });
-    setTimeout(() => rustplus.connect(), 15000);
+    console.warn('[Rust+] Disconnected — retry 15s');
+    rustConnected = false;
+    pushAlert({ type: 'info', icon: '🔌', title: 'Disconnected', detail: 'Reconnecting…' });
+    pushState();
+    setTimeout(() => { try { rustplus.connect(); } catch {} }, 15000);
   });
 
-  rustplus.on('message', async (msg) => {
-    if (!msg.broadcast) return;
+  rustplus.on('error', err => console.error('[Rust+]', err?.message || err));
+
+  rustplus.on('message', async msg => {
+    if (!msg?.broadcast) return;
     const b = msg.broadcast;
 
-    // ── TEAM MESSAGE (team chat relay + in-game command handler)
+    // Team chat
     if (b.teamMessage && C.alerts.teamChat) {
-      const tm = b.teamMessage.message;
-      const text = tm.message.trim();
-      const name = tm.name;
-
-      // In-game chat commands
-      const prefix = process.env.CMD_PREFIX || '!';
-      if (text.startsWith(prefix)) {
-        await handleIngameCommand(text.slice(prefix.length).trim(), name);
-        return;
-      }
-
-      // Relay to Discord
-      sendTo('teamChat', {
-        embeds: [new EmbedBuilder().setColor(0x5865F2)
-          .setAuthor({ name: `💬 ${name}` })
-          .setDescription(text)
-          .setFooter({ text: `Grid: ${tm.targetName || '?'} · In-game Team Chat` })
-          .setTimestamp()]
-      });
+      try {
+        const tm   = b.teamMessage.message;
+        const text = (tm.message || '').trim();
+        const name = tm.name || 'Unknown';
+        addChat(name, text);
+        const pfx = process.env.CMD_PREFIX || '!';
+        if (text.startsWith(pfx)) { await handleCmd(text.slice(pfx.length).trim(), name); return; }
+        sendTo('teamChat', { embeds: [new EmbedBuilder().setColor(0x5865F2).setAuthor({ name: `💬 ${name}` }).setDescription(text).setTimestamp()] });
+      } catch (e) { console.error('[Chat]', e.message); }
     }
 
-    // ── ENTITY CHANGED (switch toggled or alarm triggered)
+    // Entity changed
     if (b.entityChanged) {
-      const ec = b.entityChanged;
-      const idStr = String(ec.entityId);
-      const val = ec.payload?.value;
-
-      // Switch state update
-      if (knownSwitches.has(idStr)) {
-        entityStates[idStr] = val;
-        await updateSwitchPanel();
-      }
-
-      // Alarm triggered
-      if (knownAlarms.has(idStr) && val && C.alerts.alarms) {
-        const alm = knownAlarms.get(idStr);
-        await handleAlarmAlert(idStr, alm, ec);
-      }
+      try {
+        const idStr = String(b.entityChanged.entityId);
+        const val   = b.entityChanged.payload?.value ?? false;
+        if (knownSwitches.has(idStr)) {
+          entityStates[idStr] = val;
+          wsBroadcast({ type: 'switchToggled', entityId: idStr, value: val });
+          pushState();
+          try { await updatePanel(); } catch {}
+        }
+        if (knownAlarms.has(idStr) && val && C.alerts.alarms) {
+          await handleAlarm(idStr, knownAlarms.get(idStr), b.entityChanged);
+        }
+      } catch (e) { console.error('[Entity]', e.message); }
     }
 
-    // ── TEAM INFO (deaths, online/offline)
+    // Team changed
     if (b.teamChanged) {
-      await handleTeamChanged(b.teamChanged);
+      try { await handleTeamChanged(); } catch (e) { console.error('[TeamChanged]', e.message); }
     }
   });
 
-  rustplus.connect();
+  try { rustplus.connect(); } catch (e) { console.error('[Rust+] connect threw:', e.message); }
 }
 
-// ─── ALARM ALERT ────────────────────────────────────────────────────────────
-async function handleAlarmAlert(entityId, alm, ec) {
-  const ping = alm.roleId ? `<@&${alm.roleId}> ` : getPingForKeyword('ALARM');
-  const grid = ec.payload?.targetName || 'Unknown Grid';
-
-  // Discord embed
-  const almEmbed = new EmbedBuilder()
-    .setColor(0xF5A623)
-    .setTitle('🔔 Smart Alarm Triggered')
-    .setDescription(`${ping}**${alm.name}** has been activated!`)
-    .addFields(
-      { name: 'Grid', value: grid, inline: true },
-      { name: 'Entity ID', value: entityId, inline: true },
-      { name: 'Time', value: `<t:${Math.floor(Date.now()/1000)}:T>`, inline: true }
-    )
-    .setTimestamp();
-
-  sendTo('alarms', { content: ping || null, embeds: [almEmbed] });
-
-  // Voice TTS
-  if (alm.voice && C.alerts.voiceAlarms) {
-    const msg = buildTTSMsg(C.voice.msgTemplate, { alarm_name: alm.name, grid, time: new Date().toLocaleTimeString(), server: serverInfo.name || C.rust.ip });
-    await speakTTS(msg);
-  }
-
-  // In-game team chat
-  if (alm.teamChat && C.alerts.alarmInChat) {
-    try {
-      await rustplus.sendTeamMessage(`🔔 ALARM: ${alm.name} triggered at ${grid}!`);
-    } catch (e) { console.error('[Chat] Alarm send failed:', e.message); }
-  }
-
-  // Log
-  console.log(`[Alarm] ${alm.name} triggered — Grid: ${grid}`);
-}
-
-// ─── TEAM CHANGED (deaths, joins/leaves) ────────────────────────────────────
-let lastTeamMembers = {};
-
-async function handleTeamChanged(tc) {
-  const newTeam = await refreshTeamInfo();
-  if (!newTeam?.members) return;
-
-  newTeam.members.forEach(member => {
-    const prev = lastTeamMembers[member.steamId];
-
-    // Death detection
-    if (prev && member.isAlive === false && prev.isAlive === true && C.alerts.deaths) {
-      const grid = getGrid(member.x, member.y);
-      const deathEmbed = new EmbedBuilder()
-        .setColor(0xFF3B30)
-        .setTitle('💀 Team Member Died')
-        .setDescription(`${getPingForKeyword('DEATH')}**${member.name}** was killed!`)
-        .addFields(
-          { name: 'Grid', value: grid, inline: true },
-          { name: 'Player', value: member.name, inline: true },
-        )
-        .setTimestamp();
-
-      sendTo('deaths', { content: getPingForKeyword('DEATH') || null, embeds: [deathEmbed] });
-
-      // Death in team chat
-      if (C.alerts.deathInChat) {
-        try { rustplus.sendTeamMessage(`💀 ${member.name} died at ${grid}!`); } catch {}
-      }
-
-      // Voice
-      if (C.alerts.voiceDeaths) {
-        speakTTS(`${member.name} has been killed at grid ${grid}!`);
-      }
-    }
-
-    // Online/offline
-    if (prev && member.isOnline !== prev.isOnline && C.alerts.playerJoin) {
-      const action = member.isOnline ? 'came online' : 'went offline';
-      sendTo('log', { embeds: [embed(
-        member.isOnline ? '🟢 Teammate Online' : '⚫ Teammate Offline',
-        `**${member.name}** ${action}`,
-        member.isOnline ? 0x3DDC84 : 0x666666
-      )] });
-    }
-
-    lastTeamMembers[member.steamId] = member;
+// ─── ALARM ───────────────────────────────────────────────────────────────────
+async function handleAlarm(entityId, alm, ec) {
+  const ping = alm.roleId ? `<@&${alm.roleId}> ` : getPing('ALARM');
+  const grid = ec?.payload?.targetName || '?';
+  sendTo('alarms', {
+    content: ping || null,
+    embeds: [new EmbedBuilder().setColor(0xF5A623).setTitle('🔔 Alarm Triggered')
+      .setDescription(`${ping}**${alm.name}** activated!`)
+      .addFields({ name: 'Grid', value: grid, inline: true })
+      .setTimestamp()],
   });
-  try { lastTeamInfo = await rustplus.getTeamInfo(); wsBroadcast({ type: 'team_update', team: lastTeamInfo, ts: Date.now() }); } catch {}
+  pushAlert({ type: 'alarm', icon: '🔔', title: `Alarm: ${alm.name}`, detail: `Grid ${grid}` });
+  if (alm.voice && C.alerts.voiceAlarms) speakTTS(C.voice.msgTemplate.replace('{alarm_name}', alm.name).replace('{grid}', grid));
+  if (alm.teamChat && C.alerts.alarmInChat) { try { await rustplus.sendTeamMessage(`🔔 ALARM: ${alm.name} at ${grid}!`); } catch {} }
 }
 
-function getGrid(x, y) {
-  if (!x && !y) return 'Unknown';
-  const mapSize = serverInfo.mapSize || 4500;
-  const col = String.fromCharCode(65 + Math.floor(x / (mapSize / 26)));
-  const row = Math.floor(y / (mapSize / 26)) + 1;
-  return `${col}${row}`;
+// ─── TEAM CHANGED ────────────────────────────────────────────────────────────
+async function handleTeamChanged() {
+  const t = await refreshTeam();
+  if (!t?.members) return;
+
+  // Update spy tracker with latest team data
+  updateSpyFromTeam(t.members);
+
+  t.members.forEach(m => {
+    const key  = steamIdStr(m.steamId);
+    const prev = prevTeamMap[key];
+
+    if (prev && m.isAlive === false && prev.isAlive === true && C.alerts.deaths) {
+      const grid = getGrid(m.x, m.y);
+      sendTo('deaths', {
+        content: getPing('DEATH') || null,
+        embeds: [new EmbedBuilder().setColor(0xFF3B30).setTitle('💀 Team Member Died')
+          .setDescription(`**${m.name}** killed at Grid **${grid}**`).setTimestamp()],
+      });
+      pushAlert({ type: 'death', icon: '💀', title: `${m.name} died`, detail: `Grid ${grid}` });
+      if (C.alerts.deathInChat) { try { rustplus.sendTeamMessage(`💀 ${m.name} died at ${grid}!`); } catch {} }
+      if (C.alerts.voiceDeaths) speakTTS(`${m.name} died at grid ${grid}!`);
+    }
+    prevTeamMap[key] = { isAlive: m.isAlive, isOnline: m.isOnline, name: m.name };
+  });
+
+  pushState();
 }
 
-// ─── RAID DETECTION ──────────────────────────────────────────────────────────
-// rustplus.js fires a 'teamMessage' or you can use server-level explosion detection
-// This is the explosion message pattern from Rust+
-const RAID_KEYWORDS = ['explosion', 'rocket', 'c4', 'satchel', 'grenade'];
-
-async function handleRaidAlert(detail) {
+// ─── RAID ─────────────────────────────────────────────────────────────────────
+async function handleRaid(detail) {
   if (!C.alerts.raids) return;
-  const ping = getPingForKeyword('RAID');
-  const raidEmbed = new EmbedBuilder()
-    .setColor(0xCE422B)
-    .setTitle('💥 RAID ALERT')
-    .setDescription(`${ping}Explosions detected near your base!`)
-    .addFields({ name: 'Detail', value: detail || 'Explosion detected', inline: true })
-    .setTimestamp()
-    .setFooter({ text: serverInfo.name || C.rust.ip });
-
-  sendTo('raids', { content: ping || null, embeds: [raidEmbed] });
-
+  const ping = getPing('RAID');
+  sendTo('raids', {
+    content: ping || null,
+    embeds: [mkEmbed('💥 RAID ALERT', `${ping}Explosions detected!`, 0xCE422B, [{ name: 'Detail', value: detail || 'Near base', inline: true }])],
+  });
+  pushAlert({ type: 'raid', icon: '💥', title: 'RAID ALERT', detail: detail || 'Explosions near base!' });
   if (C.alerts.voiceRaids) speakTTS('RAID ALERT! Explosions detected near your base!');
 }
 
 // ─── IN-GAME COMMANDS ────────────────────────────────────────────────────────
-async function handleIngameCommand(cmd, senderName) {
-  const parts = cmd.split(' ');
-  const command = parts[0].toLowerCase();
-  const args = parts.slice(1);
-
+async function handleCmd(raw, sender) {
+  const [cmd, ...args] = raw.split(' ');
   try {
-    switch (command) {
+    switch (cmd.toLowerCase()) {
       case 'pop': {
-        const info = await refreshServerInfo();
-        const { joined, left } = popLog30m;
-        await rustplus.sendTeamMessage(
-          `📊 Players: ${info.players}/${info.maxPlayers} | Queue: ${info.queuedPlayers || 0} | Last 30m: +${joined} joined · -${left} left`
-        );
+        const i = await refreshServer();
+        await rustplus.sendTeamMessage(`📊 ${i.players}/${i.maxPlayers} | Queue:${i.queuedPlayers||0} | 30m:+${popLog30m.joined}-${popLog30m.left}`);
         break;
       }
-
       case 'time': {
-        const info = await refreshServerInfo();
-        const gameTime = info.time || '??:??';
-        const [gh] = (gameTime.split(':').map(Number));
-        const isDay = gh >= 6 && gh < 20;
-        const toNext = isDay ? 20 - gh : (24 - gh + 6);
-        await rustplus.sendTeamMessage(
-          `${isDay ? '☀️' : '🌙'} In-game: ${gameTime} | ${isDay ? 'Day' : 'Night'} | ${isDay ? 'Night' : 'Day'} in: ~${Math.floor(toNext * 60)}min`
-        );
+        const i = await refreshServer();
+        const t = i.time || '?'; const [h] = t.split(':').map(Number); const day = h >= 6 && h < 20;
+        await rustplus.sendTeamMessage(`${day?'☀️':'🌙'} ${t} | ${day?'Night in':'Day in'} ~${Math.round((day?20-h:24-h+6)*60)}min`);
         break;
       }
-
       case 'wipe': {
-        if (C.wipeDate) {
-          const diff = C.wipeDate - Date.now();
-          const d = Math.floor(diff / 86400000);
-          const h = Math.floor((diff % 86400000) / 3600000);
-          const m = Math.floor((diff % 3600000) / 60000);
-          await rustplus.sendTeamMessage(`📅 Next wipe: ${d}d ${h}h ${m}m`);
-        } else {
-          await rustplus.sendTeamMessage('📅 Wipe date not set. Configure WIPE_DATE in settings.');
-        }
+        if (!C.wipeDate) { await rustplus.sendTeamMessage('📅 Wipe date not set'); break; }
+        const d = C.wipeDate - Date.now();
+        await rustplus.sendTeamMessage(`📅 Wipe in ${Math.floor(d/86400000)}d ${Math.floor((d%86400000)/3600000)}h ${Math.floor((d%3600000)/60000)}m`);
         break;
       }
-
-      case 'map': {
-        const info = await refreshServerInfo();
-        await rustplus.sendTeamMessage(`🗺 Map: https://rustmaps.com/map/${info.mapSize}/${info.seed}`);
-        break;
-      }
-
       case 'team': {
-        const team = await refreshTeamInfo();
-        if (!team?.members) break;
-        const lines = team.members.map(m => {
-          const status = m.isOnline ? '●' : '○';
-          const grid = m.isOnline ? getGrid(m.x, m.y) : 'offline';
-          const hp = m.isOnline && m.isAlive ? ` ${Math.round(m.health || 0)}HP` : '';
-          return `${status} ${m.name} ${grid}${hp}`;
-        });
-        await rustplus.sendTeamMessage('👥 Team:\n' + lines.join('\n'));
+        const t = await refreshTeam();
+        if (!t?.members) break;
+        await rustplus.sendTeamMessage('👥\n' + t.members.map(m =>
+          `${m.isOnline?'●':'○'} ${m.name}${m.isOnline?` ${getGrid(m.x,m.y)} ${Math.round(m.health||0)}HP`:' offline'}`
+        ).join('\n'));
         break;
       }
-
-      case 'events': {
-        // This would pull from active server event tracking
-        await rustplus.sendTeamMessage('📡 Events: Check #events channel in Discord for live updates.');
-        break;
-      }
-
-      case 'sw':
-      case 'switch': {
-        if (!args[0]) {
-          await rustplus.sendTeamMessage('Usage: !sw [name]');
-          break;
-        }
-        const target = args.join(' ').toLowerCase();
+      case 'sw': case 'switch': {
+        if (!args[0]) { await rustplus.sendTeamMessage('Usage: !sw [name]'); break; }
+        const q = args.join(' ').toLowerCase();
         let found = null;
-        for (const [id, sw] of knownSwitches) {
-          if (sw.name.toLowerCase().includes(target)) { found = { id, sw }; break; }
-        }
-        if (!found) { await rustplus.sendTeamMessage(`⚡ Switch not found: ${args.join(' ')}`); break; }
-        const currentState = entityStates[found.id] ?? false;
-        await setEntityValue(found.id, !currentState);
-        await rustplus.sendTeamMessage(`⚡ ${found.sw.name}: ${!currentState ? 'ON' : 'OFF'}`);
+        for (const [id, sw] of knownSwitches) if (sw.name.toLowerCase().includes(q)) { found = { id, sw }; break; }
+        if (!found) { await rustplus.sendTeamMessage(`⚡ Not found: ${q}`); break; }
+        const nv = !(entityStates[found.id] ?? false);
+        await setEntity(found.id, nv);
+        await rustplus.sendTeamMessage(`⚡ ${found.sw.name}: ${nv?'ON':'OFF'}`);
+        pushState();
         break;
       }
-
-      case 'switches': {
-        const lines = [];
-        for (const [id, sw] of knownSwitches) {
-          const on = entityStates[id] ?? false;
-          lines.push(`${on ? '⚡' : '○'} ${sw.name}: ${on ? 'ON' : 'OFF'}`);
-        }
-        await rustplus.sendTeamMessage('⚡ Switches:\n' + (lines.join('\n') || 'None configured'));
+      case 'ping':
+        await rustplus.sendTeamMessage(`🤖 RustLink online | ${discord.ws.ping}ms`);
         break;
-      }
-
-      case 'alarms': {
-        const lines = [];
-        for (const [id, alm] of knownAlarms) {
-          lines.push(`${alm.enabled !== false ? '🔔' : '○'} ${alm.name}`);
-        }
-        await rustplus.sendTeamMessage('🔔 Alarms:\n' + (lines.join('\n') || 'None configured'));
-        break;
-      }
-
-      case 'ping': {
-        await rustplus.sendTeamMessage(`🤖 Rust Link: Online | Discord: Connected | Latency: ${client.ws.ping}ms`);
-        break;
-      }
     }
-  } catch (e) { console.error('[Cmd]', command, e.message); }
+  } catch (e) { console.error('[Cmd]', cmd, e.message); }
 }
 
-// ─── ENTITY VALUE ────────────────────────────────────────────────────────────
-async function setEntityValue(entityId, value) {
-  try { await rustplus.setEntityValue(entityId, value); entityStates[entityId] = value; return true; }
+// ─── ENTITY ───────────────────────────────────────────────────────────────────
+async function setEntity(id, val) {
+  try { await rustplus.setEntityValue(id, val); entityStates[id] = val; return true; }
   catch (e) { console.error('[setEntity]', e.message); return false; }
 }
 
-// ─── SWITCH PANEL (Discord) ──────────────────────────────────────────────────
-async function updateSwitchPanel() {
-  if (!C.discord.channels.switches) return;
+// ─── DISCORD PANEL ───────────────────────────────────────────────────────────
+async function updatePanel() {
+  if (!C.discord.channels.switches || !knownSwitches.size) return;
   try {
-    const ch = await client.channels.fetch(C.discord.channels.switches);
-    const panelEmbed = new EmbedBuilder()
-      .setColor(0xCE422B)
-      .setTitle('⚡ Smart Switch Control Panel')
-      .setDescription('Click buttons below to toggle switches in-game. Changes apply instantly.')
-      .setTimestamp()
-      .setFooter({ text: `${Object.values(entityStates).filter(Boolean).length} switches ON · Updated` });
-
-    // List switch states in embed fields
+    const ch  = await discord.channels.fetch(C.discord.channels.switches);
+    const emb = new EmbedBuilder().setColor(0xCE422B).setTitle('⚡ Switch Control Panel')
+      .setDescription('Click to toggle in-game').setTimestamp()
+      .setFooter({ text: `${Object.values(entityStates).filter(Boolean).length} switches ON` });
     for (const [id, sw] of knownSwitches) {
       if (!sw.inPanel) continue;
-      panelEmbed.addFields({ name: `${sw.icon || '⚡'} ${sw.name}`, value: entityStates[id] ? '🟢 ON' : '⚫ OFF', inline: true });
+      emb.addFields({ name: `${sw.icon} ${sw.name}`, value: entityStates[id] ? '🟢 ON' : '⚫ OFF', inline: true });
     }
-
-    // Build button rows (max 5 buttons per row, max 5 rows = 25 buttons)
-    const rows = [];
-    let currentRow = new ActionRowBuilder();
-    let count = 0;
+    const rows = []; let row = new ActionRowBuilder(); let n = 0;
     for (const [id, sw] of knownSwitches) {
       if (!sw.inPanel) continue;
-      if (count > 0 && count % 5 === 0) { rows.push(currentRow); currentRow = new ActionRowBuilder(); }
+      if (n > 0 && n % 5 === 0) { rows.push(row); row = new ActionRowBuilder(); }
       const on = entityStates[id] ?? false;
-      currentRow.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`sw_toggle_${id}`)
-          .setLabel(`${on ? '⚡' : '○'} ${sw.name}`)
-          .setStyle(on ? ButtonStyle.Success : ButtonStyle.Secondary)
-      );
-      count++;
-      if (rows.length >= 4) break; // Max 4 rows for switches
+      row.addComponents(new ButtonBuilder().setCustomId(`sw_toggle_${id}`).setLabel(`${on?'⚡':'○'} ${sw.name}`).setStyle(on ? ButtonStyle.Success : ButtonStyle.Secondary));
+      n++;
+      if (rows.length >= 4) break;
     }
-    if (count % 5 !== 0 || count === 0) rows.push(currentRow);
-
-    // Add a refresh button in its own row
-    const refreshRow = new ActionRowBuilder().addComponents(
+    if (!n || n % 5 !== 0) rows.push(row);
+    rows.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('sw_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('sw_all_on').setLabel('⚡ All ON').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('sw_all_off').setLabel('⬛ All OFF').setStyle(ButtonStyle.Secondary),
-    );
-    rows.push(refreshRow);
-
-    const payload = { embeds: [panelEmbed], components: rows };
-
-    // Update existing message or post new one
-    if (switchPanelMsgId) {
-      try {
-        const msg = await ch.messages.fetch(switchPanelMsgId);
-        await msg.edit(payload);
-        return;
-      } catch { switchPanelMsgId = null; }
+    ));
+    const payload = { embeds: [emb], components: rows };
+    if (panelMsgId) {
+      try { await (await ch.messages.fetch(panelMsgId)).edit(payload); return; }
+      catch { panelMsgId = null; }
     }
-
-    const msg = await ch.send(payload);
-    switchPanelMsgId = msg.id;
+    panelMsgId = (await ch.send(payload)).id;
   } catch (e) { console.error('[Panel]', e.message); }
 }
 
 // ─── POP TRACKER ─────────────────────────────────────────────────────────────
-function startPopTracker() {
+function startPop() {
+  if (popTracking) return;
+  popTracking = true;
   setInterval(async () => {
     try {
-      const info = await refreshServerInfo();
-      const now = Date.now();
-      const count = info.players || 0;
-      popHistory.push({ time: now, count });
-
-      // Keep 30 minutes of history
-      const cutoff = now - 30 * 60 * 1000;
-      while (popHistory.length > 1 && popHistory[0].time < cutoff) popHistory.shift();
-
-      // Track joined/left
-      if (prevPlayerList.length > 0 && prevPlayerList.length !== count) {
-        if (count > prevPlayerList.length) popLog30m.joined += count - prevPlayerList.length;
-        else popLog30m.left += prevPlayerList.length - count;
+      const i = await refreshServer();
+      const c = i.players || 0;
+      popHistory.push({ time: Date.now(), count: c });
+      popHistory = popHistory.filter(p => p.time > Date.now() - 1800000);
+      if (prevPop > 0) {
+        if (c > prevPop) popLog30m.joined += c - prevPop;
+        else if (c < prevPop) popLog30m.left += prevPop - c;
       }
-      prevPlayerList = Array(count).fill(null); // approximate
-
-      // Reset 30m counters every 30 minutes
+      prevPop = c;
+      pushState();
     } catch {}
-  }, 60000); // every minute
-
-  // Reset 30m stats every 30 minutes
-  setInterval(() => { popLog30m = { joined: 0, left: 0, snapshots: [] }; }, 30 * 60 * 1000);
+  }, 60000);
+  setInterval(() => { popLog30m = { joined: 0, left: 0 }; }, 1800000);
 }
 
 // ─── WIPE REMINDERS ──────────────────────────────────────────────────────────
 function scheduleWipeReminders() {
   if (!C.wipeDate || !C.alerts.wipe) return;
-  const reminders = [
-    { before: 24 * 60 * 60 * 1000, label: '24 hours' },
-    { before: 60 * 60 * 1000,      label: '1 hour' },
-    { before: 15 * 60 * 1000,      label: '15 minutes' },
-  ];
-  reminders.forEach(({ before, label }) => {
-    const fireAt = C.wipeDate.getTime() - before;
-    const delay = fireAt - Date.now();
-    if (delay > 0) {
-      setTimeout(() => {
-        sendTo('wipe', {
-          content: getPingForKeyword('WIPE') || null,
-          embeds: [embed(
-            '📅 Wipe Reminder',
-            `**Server wipes in ${label}!**\nTime: <t:${Math.floor(C.wipeDate.getTime()/1000)}:F>`,
-            0xF5A623,
-            [{ name: 'Server', value: serverInfo.name || C.rust.ip, inline: true }]
-          )]
-        });
-      }, delay);
-    }
-  });
+  [{ b: 86400000, l: '24 hours' }, { b: 3600000, l: '1 hour' }, { b: 900000, l: '15 minutes' }]
+    .forEach(({ b, l }) => {
+      const d = C.wipeDate.getTime() - b - Date.now();
+      if (d > 0) setTimeout(() => {
+        sendTo('wipe', { embeds: [mkEmbed('📅 Wipe Reminder', `Wipes in **${l}**!`, 0xF5A623)] });
+        pushAlert({ type: 'event', icon: '📅', title: `Wipe in ${l}`, detail: '' });
+      }, d);
+    });
 }
 
 // ─── DATA FETCHERS ────────────────────────────────────────────────────────────
-async function refreshServerInfo() {
-  try { const r = await rustplus.getInfo(); serverInfo = r?.response?.info || {}; return serverInfo; }
-  catch { return serverInfo; }
+async function refreshServer() {
+  try { const r = await rustplus.getInfo(); if (r?.response?.info) serverInfo = r.response.info; }
+  catch (e) { console.error('[getInfo]', e.message); }
+  return serverInfo;
 }
 
-async function refreshTeamInfo() {
-  try { const r = await rustplus.getTeamInfo(); teamInfo = r?.response?.teamInfo || {}; return teamInfo; }
-  catch { return teamInfo; }
+async function refreshTeam() {
+  try {
+    const r = await rustplus.getTeamInfo();
+    if (r?.response?.teamInfo) teamInfo = r.response.teamInfo;
+    if (teamInfo?.members) updateSpyFromTeam(teamInfo.members);
+  } catch (e) { console.error('[getTeam]', e.message); }
+  return teamInfo;
 }
 
-// ─── SLASH COMMANDS ──────────────────────────────────────────────────────────
-const slashCommands = [
-  new SlashCommandBuilder().setName('server').setDescription('📊 Server info & population'),
-  new SlashCommandBuilder().setName('team').setDescription('👥 Team members + HP + grid'),
-  new SlashCommandBuilder().setName('switches').setDescription('⚡ List all smart switches'),
-  new SlashCommandBuilder().setName('switch')
-    .setDescription('⚡ Toggle a smart switch')
-    .addStringOption(o => o.setName('name').setDescription('Switch name or entity ID').setRequired(true))
-    .addStringOption(o => o.setName('state').setDescription('on or off').setRequired(true).addChoices({name:'on',value:'on'},{name:'off',value:'off'})),
-  new SlashCommandBuilder().setName('alarms').setDescription('🔔 List smart alarms'),
-  new SlashCommandBuilder().setName('wipe').setDescription('📅 Time until next wipe'),
-  new SlashCommandBuilder().setName('events').setDescription('🗺 Active server events'),
-  new SlashCommandBuilder().setName('map').setDescription('🗺 Server map link'),
-  new SlashCommandBuilder().setName('pop').setDescription('📊 Current population + 30m trend'),
-  new SlashCommandBuilder().setName('time').setDescription('🕐 In-game time + day/night'),
-  new SlashCommandBuilder().setName('voicejoin').setDescription('🔊 Bot joins voice channel for TTS alerts'),
-  new SlashCommandBuilder().setName('voiceleave').setDescription('🔇 Bot leaves voice channel'),
-  new SlashCommandBuilder().setName('testalert')
-    .setDescription('🧪 Test an alert type')
-    .addStringOption(o => o.setName('type').setDescription('Alert type').setRequired(true).addChoices(
-      {name:'raid',value:'raid'},{name:'alarm',value:'alarm'},{name:'death',value:'death'},{name:'tts',value:'tts'}
-    )),
+// Heartbeat — keeps dashboard fresh every 15 seconds
+setInterval(() => { if (rustConnected) pushState(); }, 15000);
+
+// ─── SLASH COMMANDS ───────────────────────────────────────────────────────────
+const CMDS = [
+  new SlashCommandBuilder().setName('server').setDescription('📊 Server info'),
+  new SlashCommandBuilder().setName('team').setDescription('👥 Team status'),
+  new SlashCommandBuilder().setName('switches').setDescription('⚡ List switches'),
+  new SlashCommandBuilder().setName('switch').setDescription('⚡ Toggle switch')
+    .addStringOption(o => o.setName('name').setDescription('Name').setRequired(true))
+    .addStringOption(o => o.setName('state').setDescription('on/off').setRequired(true)
+      .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })),
+  new SlashCommandBuilder().setName('pop').setDescription('📊 Population'),
+  new SlashCommandBuilder().setName('time').setDescription('🕐 In-game time'),
+  new SlashCommandBuilder().setName('wipe').setDescription('📅 Wipe countdown'),
+  new SlashCommandBuilder().setName('map').setDescription('🗺 Map link'),
+  new SlashCommandBuilder().setName('voicejoin').setDescription('🔊 Join voice'),
+  new SlashCommandBuilder().setName('voiceleave').setDescription('🔇 Leave voice'),
+  new SlashCommandBuilder().setName('testalert').setDescription('🧪 Test alert')
+    .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true)
+      .addChoices({ name: 'raid', value: 'raid' }, { name: 'alarm', value: 'alarm' }, { name: 'death', value: 'death' }, { name: 'tts', value: 'tts' })),
 ].map(c => c.toJSON());
 
-async function registerCommands() {
+async function registerCmds() {
   const rest = new REST({ version: '10' }).setToken(C.discord.token);
   try {
-    await rest.put(Routes.applicationGuildCommands(C.discord.clientId, C.discord.guildId), { body: slashCommands });
+    await rest.put(Routes.applicationGuildCommands(C.discord.clientId, C.discord.guildId), { body: CMDS });
     console.log('[Discord] Slash commands registered');
-  } catch (e) { console.error('[Discord] Command register failed:', e); }
+  } catch (e) { console.error('[Discord] Register failed:', e.message); }
 }
 
-// ─── INTERACTION HANDLER ──────────────────────────────────────────────────────
-client.on('interactionCreate', async interaction => {
-
-  // ── BUTTONS (switch panel)
+// ─── INTERACTIONS ─────────────────────────────────────────────────────────────
+discord.on('interactionCreate', async interaction => {
   if (interaction.isButton()) {
-    const [, action, entityId] = interaction.customId.split('_');
-    await interaction.deferUpdate();
-
-    if (action === 'toggle' && entityId) {
-      const current = entityStates[entityId] ?? false;
-      const ok = await setEntityValue(entityId, !current);
-      const sw = knownSwitches.get(entityId);
-      if (ok) {
-        sendTo('log', { embeds: [embed(
-          `⚡ Switch ${!current ? 'ON' : 'OFF'}`,
-          `**${sw?.name || entityId}** turned ${!current ? 'ON' : 'OFF'} by **${interaction.user.username}**`,
-          !current ? 0x3DDC84 : 0x888888
-        )] });
-      }
-      await updateSwitchPanel();
+    const parts  = interaction.customId.split('_');
+    const action = parts[1];
+    const eid    = parts[2];
+    await interaction.deferUpdate().catch(() => {});
+    if (action === 'toggle' && eid) {
+      await setEntity(eid, !(entityStates[eid] ?? false));
+      pushState();
+      try { await updatePanel(); } catch {}
     }
-
-    if (action === 'refresh') await updateSwitchPanel();
-    if (action === 'all' && entityId === 'on') {
-      for (const [id] of knownSwitches) { if (knownSwitches.get(id).inPanel) await setEntityValue(id, true); }
-      await updateSwitchPanel();
-    }
-    if (action === 'all' && entityId === 'off') {
-      for (const [id] of knownSwitches) { if (knownSwitches.get(id).inPanel) await setEntityValue(id, false); }
-      await updateSwitchPanel();
+    if (action === 'refresh') { try { await updatePanel(); } catch {} }
+    if (action === 'all') {
+      const val = eid === 'on';
+      for (const [id, sw] of knownSwitches) if (sw.inPanel) await setEntity(id, val);
+      pushState();
+      try { await updatePanel(); } catch {}
     }
     return;
   }
 
   if (!interaction.isChatInputCommand()) return;
-  await interaction.deferReply({ ephemeral: false });
-  const { commandName } = interaction;
+  await interaction.deferReply().catch(() => {});
+  const cmd = interaction.commandName;
 
-  // ── /server
-  if (commandName === 'server') {
-    const info = await refreshServerInfo();
-    return interaction.editReply({ embeds: [
-      new EmbedBuilder().setColor(0xCE422B).setTitle(`🎮 ${info.name || 'Unknown Server'}`)
+  try {
+    if (cmd === 'server') {
+      const i = await refreshServer();
+      return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xCE422B)
+        .setTitle(`🎮 ${i.name || 'Server'}`)
         .addFields(
-          { name: 'Players', value: `${info.players}/${info.maxPlayers}`, inline: true },
-          { name: 'Queued', value: `${info.queuedPlayers || 0}`, inline: true },
-          { name: 'Map Size', value: `${info.mapSize || '?'}`, inline: true },
-          { name: 'Seed', value: `${info.seed || '?'}`, inline: true },
-          { name: 'Wipe', value: info.wipeTime ? `<t:${info.wipeTime}:R>` : 'Unknown', inline: true },
-        ).setTimestamp()
-    ] });
-  }
-
-  // ── /pop
-  if (commandName === 'pop') {
-    const info = await refreshServerInfo();
-    const { joined, left } = popLog30m;
-    const last = popHistory.slice(-1)[0]?.count || info.players;
-    return interaction.editReply({ embeds: [
-      embed('📊 Server Population',
-        `**${info.players}/${info.maxPlayers}** online · **${info.queuedPlayers || 0}** queued`,
-        0x00D4FF,
-        [
-          { name: '30m Trend', value: `+${joined} joined · -${left} left`, inline: true },
-          { name: 'Map', value: `${info.mapSize} · Seed: ${info.seed}`, inline: true },
-        ]
-      )
-    ] });
-  }
-
-  // ── /time
-  if (commandName === 'time') {
-    const info = await refreshServerInfo();
-    const t = info.time || '??:??';
-    const [h] = t.split(':').map(Number);
-    const isDay = h >= 6 && h < 20;
-    const toNext = Math.round((isDay ? (20 - h) : (24 - h + 6)) * 60);
-    return interaction.editReply({ embeds: [
-      embed(`${isDay ? '☀️' : '🌙'} In-Game Time: ${t}`,
-        `Currently **${isDay ? 'Daytime' : 'Nighttime'}**\n${isDay ? 'Night' : 'Day'} in approximately **${toNext} minutes**`,
-        0xF5A623
-      )
-    ] });
-  }
-
-  // ── /team
-  if (commandName === 'team') {
-    const team = await refreshTeamInfo();
-    if (!team?.members) return interaction.editReply({ embeds: [embed('❌ Error', 'Could not fetch team info', 0xCE422B)] });
-    const e = new EmbedBuilder().setColor(0x5865F2).setTitle('👥 Team Members').setTimestamp();
-    team.members.forEach(m => {
-      const grid = m.isOnline ? getGrid(m.x, m.y) : '—';
-      const hp = m.isOnline && m.isAlive ? `${Math.round(m.health)}HP` : m.isOnline ? 'Dead' : '—';
-      e.addFields({ name: (m.isOnline ? '🟢 ' : '⚫ ') + m.name, value: `HP: ${hp}\nGrid: ${grid}`, inline: true });
-    });
-    return interaction.editReply({ embeds: [e] });
-  }
-
-  // ── /switch
-  if (commandName === 'switch') {
-    const nameOrId = interaction.options.getString('name');
-    const wantOn = interaction.options.getString('state') === 'on';
-    let entityId = null;
-    for (const [id, sw] of knownSwitches) {
-      if (sw.name.toLowerCase().includes(nameOrId.toLowerCase()) || id === nameOrId) { entityId = id; break; }
+          { name: 'Players', value: `${i.players||0}/${i.maxPlayers||0}`, inline: true },
+          { name: 'Queued',  value: `${i.queuedPlayers||0}`, inline: true },
+          { name: 'Map',     value: `${i.mapSize||'?'} · Seed ${i.seed||'?'}`, inline: true },
+          { name: 'Wipe',    value: i.wipeTime ? `<t:${i.wipeTime}:R>` : '?', inline: true },
+        ).setTimestamp()] });
     }
-    if (!entityId && /^\d+$/.test(nameOrId)) entityId = nameOrId;
-    if (!entityId) return interaction.editReply({ embeds: [embed('❌ Not Found', `No switch matching "${nameOrId}"`, 0xCE422B)] });
-    const ok = await setEntityValue(entityId, wantOn);
-    const swName = knownSwitches.get(entityId)?.name || entityId;
-    await updateSwitchPanel();
-    return interaction.editReply({ embeds: [embed(
-      wantOn ? '⚡ Switch ON' : '⬛ Switch OFF',
-      `**${swName}** turned ${wantOn ? 'ON' : 'OFF'}`,
-      wantOn ? 0x3DDC84 : 0x888888
-    )] });
-  }
-
-  // ── /switches
-  if (commandName === 'switches') {
-    const e = new EmbedBuilder().setColor(0xCE422B).setTitle('⚡ Smart Switches');
-    for (const [id, sw] of knownSwitches) {
-      e.addFields({ name: `${sw.icon||'⚡'} ${sw.name}`, value: `${entityStates[id] ? '🟢 ON' : '⚫ OFF'}\nID: \`${id}\``, inline: true });
+    if (cmd === 'pop') {
+      const i = await refreshServer();
+      return interaction.editReply({ embeds: [mkEmbed('📊 Pop', `**${i.players||0}/${i.maxPlayers||0}** online`, 0x00D4FF,
+        [{ name: '30m', value: `+${popLog30m.joined}/-${popLog30m.left}`, inline: true }])] });
     }
-    if (knownSwitches.size === 0) e.setDescription('No switches configured. Add them in Settings.');
-    return interaction.editReply({ embeds: [e] });
-  }
-
-  // ── /alarms
-  if (commandName === 'alarms') {
-    const e = new EmbedBuilder().setColor(0xF5A623).setTitle('🔔 Smart Alarms');
-    for (const [id, alm] of knownAlarms) {
-      e.addFields({ name: alm.name, value: `ID: \`${id}\`\nVoice: ${alm.voice?'✅':'❌'} · Chat: ${alm.teamChat?'✅':'❌'}`, inline: true });
+    if (cmd === 'time') {
+      const i = await refreshServer(); const t = i.time||'?'; const [h] = t.split(':').map(Number); const day = h>=6&&h<20;
+      return interaction.editReply({ embeds: [mkEmbed(`${day?'☀️':'🌙'} ${t}`, `${day?'Daytime':'Nighttime'} · ~${Math.round((day?20-h:24-h+6)*60)}min to ${day?'night':'day'}`, 0xF5A623)] });
     }
-    if (knownAlarms.size === 0) e.setDescription('No alarms configured.');
-    return interaction.editReply({ embeds: [e] });
-  }
-
-  // ── /wipe
-  if (commandName === 'wipe') {
-    const info = await refreshServerInfo();
-    const wipeTs = C.wipeDate ? Math.floor(C.wipeDate.getTime()/1000) : info.wipeTime;
-    if (!wipeTs) return interaction.editReply({ embeds: [embed('📅 Wipe', 'No wipe date configured.', 0xF5A623)] });
-    return interaction.editReply({ embeds: [embed('📅 Next Wipe', `Wipe is <t:${wipeTs}:R> (<t:${wipeTs}:F>)`, 0xF5A623)] });
-  }
-
-  // ── /map
-  if (commandName === 'map') {
-    const info = await refreshServerInfo();
-    return interaction.editReply({ embeds: [embed('🗺 Server Map',
-      `[View on rustmaps.com](https://rustmaps.com/map/${info.mapSize}/${info.seed})\nSeed: \`${info.seed}\` · Size: \`${info.mapSize}\``,
-      0x3DDC84
-    )] });
-  }
-
-  // ── /voicejoin
-  if (commandName === 'voicejoin') {
-    await ensureVoiceJoined();
-    return interaction.editReply({ embeds: [embed('🔊 Joined Voice', 'Bot is now in the voice channel and ready for TTS alerts.', 0x3DDC84)] });
-  }
-
-  // ── /voiceleave
-  if (commandName === 'voiceleave') {
-    if (voiceConn) { voiceConn.destroy(); voiceConn = null; }
-    return interaction.editReply({ embeds: [embed('🔇 Left Voice', 'Bot disconnected from voice channel.', 0x888888)] });
-  }
-
-  // ── /testalert
-  if (commandName === 'testalert') {
-    const type = interaction.options.getString('type');
-    await interaction.editReply({ embeds: [embed('🧪 Test Alert', `Firing test: **${type}**`, 0xF5A623)] });
-    switch (type) {
-      case 'raid': await handleRaidAlert('TEST — Rocket fired nearby (simulated)'); break;
-      case 'alarm':
-        for (const [id, alm] of knownAlarms) { await handleAlarmAlert(id, alm, { payload: { targetName: 'F5' } }); break; }
-        break;
-      case 'death':
-        sendTo('deaths', { embeds: [embed('💀 TEST Death', '**TestPlayer** was killed at Grid F5 (simulated)', 0xFF3B30)] });
-        break;
-      case 'tts':
-        await speakTTS('This is a test of the Rust Link voice alert system. All systems operational.');
-        break;
+    if (cmd === 'team') {
+      const t = await refreshTeam();
+      const e = new EmbedBuilder().setColor(0x5865F2).setTitle('👥 Team');
+      (t?.members||[]).forEach(m => e.addFields({ name: (m.isOnline?'🟢 ':'⚫ ')+m.name, value: `HP:${Math.round(m.health||0)} Grid:${getGrid(m.x,m.y)}`, inline: true }));
+      return interaction.editReply({ embeds: [e] });
     }
-  }
+    if (cmd === 'switch') {
+      const name   = interaction.options.getString('name');
+      const wantOn = interaction.options.getString('state') === 'on';
+      let eid = null;
+      for (const [id, sw] of knownSwitches) if (sw.name.toLowerCase().includes(name.toLowerCase())) { eid = id; break; }
+      if (!eid) return interaction.editReply({ embeds: [mkEmbed('❌ Not Found', `No switch: ${name}`, 0xCE422B)] });
+      await setEntity(eid, wantOn); pushState(); try { await updatePanel(); } catch {}
+      return interaction.editReply({ embeds: [mkEmbed(wantOn?'⚡ ON':'⬛ OFF', `${knownSwitches.get(eid)?.name} → ${wantOn?'ON':'OFF'}`, wantOn?0x3DDC84:0x888888)] });
+    }
+    if (cmd === 'switches') {
+      const e = new EmbedBuilder().setColor(0xCE422B).setTitle('⚡ Switches');
+      for (const [id, sw] of knownSwitches) e.addFields({ name: `${sw.icon} ${sw.name}`, value: entityStates[id]?'🟢 ON':'⚫ OFF', inline: true });
+      return interaction.editReply({ embeds: [e] });
+    }
+    if (cmd === 'wipe') {
+      const i = await refreshServer(); const ts = C.wipeDate ? Math.floor(C.wipeDate/1000) : i.wipeTime;
+      return interaction.editReply({ embeds: [mkEmbed('📅 Wipe', ts ? `<t:${ts}:R>` : 'Not set', 0xF5A623)] });
+    }
+    if (cmd === 'map') {
+      const i = await refreshServer();
+      return interaction.editReply({ embeds: [mkEmbed('🗺 Map', `[rustmaps.com](https://rustmaps.com/map/${i.mapSize}/${i.seed})`, 0x3DDC84)] });
+    }
+    if (cmd === 'voicejoin')  { await ensureVoice(); return interaction.editReply({ embeds: [mkEmbed('🔊 Joined', 'Bot in voice', 0x3DDC84)] }); }
+    if (cmd === 'voiceleave') {
+      if (voiceConn) { voiceConn.destroy(); voiceConn = null; }
+      return interaction.editReply({ embeds: [mkEmbed('🔇 Left', 'Bot left voice', 0x888888)] });
+    }
+    if (cmd === 'testalert') {
+      const type = interaction.options.getString('type');
+      await interaction.editReply({ embeds: [mkEmbed('🧪 Test', `Firing **${type}**`, 0xF5A623)] });
+      if (type === 'raid')  handleRaid('TEST (simulated)');
+      if (type === 'alarm') { for (const [id, alm] of knownAlarms) { await handleAlarm(id, alm, { payload: { targetName: 'F5' } }); break; } }
+      if (type === 'death') { sendTo('deaths', { embeds: [mkEmbed('💀 TEST', 'TestPlayer killed at F5', 0xFF3B30)] }); pushAlert({ type:'death', icon:'💀', title:'TEST death', detail:'F5' }); }
+      if (type === 'tts')   speakTTS('This is a test of Rust Link voice alerts.');
+    }
+  } catch (e) { console.error('[Interaction]', cmd, e.message); }
 });
 
-// ─── READY ────────────────────────────────────────────────────────────────────
-client.once('ready', async () => {
-  console.log(`[Discord] Logged in as ${client.user.tag}`);
-  await registerCommands();
-  createRustClient();
-  await updateSwitchPanel();
+// ─── DISCORD READY ────────────────────────────────────────────────────────────
+discord.once('clientReady', async () => {
+  console.log(`[Discord] ${discord.user.tag} ready`);
+  await registerCmds();
+  startRustClient();
+  wsBroadcast({ type: 'botReady', tag: discord.user.tag });
   console.log('[RustLink] All systems GO');
 });
 
-// ─── START ────────────────────────────────────────────────────────────────────
-client.login(C.discord.token).catch(err => {
-  console.error('[Discord] Login failed:', err.message);
+// ─── START ───────────────────────────────────────────────────────────────────
+httpServer.listen(C.wsPort, () => console.log(`[WS] Listening on port ${C.wsPort}`));
+
+discord.login(C.discord.token).catch(e => {
+  console.error('[Discord] Login failed:', e.message);
   process.exit(1);
 });
