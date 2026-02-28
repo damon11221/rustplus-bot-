@@ -1,33 +1,46 @@
 /**
- * Fix for Rustafied/modern servers where AppInfo.queuedPlayers may be omitted.
- * Old rustplus.proto marks queuedPlayers as required, causing protobuf decode crash:
- *   CustomError [ProtocolError]: missing required 'queuedPlayers'
+ * Postinstall patch for @liamcottle/rustplus.js proto compatibility.
  *
- * This postinstall patch changes queuedPlayers to OPTIONAL in the installed rustplus.proto.
+ * Some servers omit fields that rustplus.proto marks as REQUIRED (proto2),
+ * causing protobufjs decode crashes like:
+ *   missing required 'queuedPlayers'
+ *   missing required 'isOnline'
+ *
+ * This script makes those fields OPTIONAL in the installed rustplus.proto.
  */
 const fs = require("fs");
 const path = require("path");
 
-function patchFile(protoPath) {
+function patchProto(protoPath) {
   if (!fs.existsSync(protoPath)) return false;
   let s = fs.readFileSync(protoPath, "utf8");
-  const re = /required\s+uint32\s+queuedPlayers\s*=\s*9\s*;/g;
-  if (!re.test(s)) return false;
-  s = s.replace(re, "optional uint32 queuedPlayers = 9;");
-  fs.writeFileSync(protoPath, s, "utf8");
-  console.log(`[patch-rustplus] Patched queuedPlayers to optional in: ${protoPath}`);
-  return true;
+  let changed = false;
+
+  // queuedPlayers (uint32) - make optional regardless of field number
+  const reQueued = /required\s+uint32\s+queuedPlayers\s*=\s*\d+\s*;/g;
+  if (reQueued.test(s)) {
+    s = s.replace(reQueued, (m) => m.replace(/^required/, "optional"));
+    changed = true;
+  }
+
+  // isOnline (bool) - make optional regardless of field number
+  const reOnline = /required\s+bool\s+isOnline\s*=\s*\d+\s*;/g;
+  if (reOnline.test(s)) {
+    s = s.replace(reOnline, (m) => m.replace(/^required/, "optional"));
+    changed = true;
+  }
+
+  if (changed) {
+    fs.writeFileSync(protoPath, s, "utf8");
+    console.log(`[patch-rustplus] Patched required fields to optional in: ${protoPath}`);
+    return true;
+  }
+  return false;
 }
 
-const candidates = [
-  path.join(process.cwd(), "node_modules", "@liamcottle", "rustplus.js", "rustplus.proto"),
-];
-
-let ok = false;
-for (const p of candidates) {
-  try { ok = patchFile(p) || ok; } catch (_) {}
-}
+const protoPath = path.join(process.cwd(), "node_modules", "@liamcottle", "rustplus.js", "rustplus.proto");
+const ok = patchProto(protoPath);
 
 if (!ok) {
-  console.warn("[patch-rustplus] No patch applied (proto not found or already patched).");
+  console.warn("[patch-rustplus] No patch applied (proto not found or already compatible).");
 }
