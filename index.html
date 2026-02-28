@@ -1,0 +1,2538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>RUST LINK v2 — Command Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&family=Saira+Condensed:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --rust:#CE422B; --rust2:#9B2D1A; --rust-glow:rgba(206,66,43,.35);
+      --amber:#F5A623; --amber-glow:rgba(245,166,35,.3);
+      --green:#3DDC84; --green-glow:rgba(61,220,132,.25);
+      --blue:#5865F2; --blue-glow:rgba(88,101,242,.25);
+      --cyan:#00D4FF; --cyan-glow:rgba(0,212,255,.2);
+      --red:#FF3B30; --yellow:#FFD60A;
+      --bg:#080808; --bg2:#0F0F0D; --bg3:#161614; --bg4:#1E1E1B; --bg5:#252521;
+      --border:rgba(255,255,255,.06); --border2:rgba(255,255,255,.1);
+      --border-rust:rgba(206,66,43,.4); --border-green:rgba(61,220,132,.3);
+      --text:#EAE6DC; --text2:#A8A49A; --text3:#5A5750; --text4:#2E2C29;
+      --mono:'Share Tech Mono',monospace;
+      --raj:'Rajdhani',sans-serif;
+      --cond:'Saira Condensed',sans-serif;
+      --sidebar:220px;
+    }
+    *{margin:0;padding:0;box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{background:var(--bg);color:var(--text);font-family:var(--raj);min-height:100vh;overflow-x:hidden;cursor:default}
+    /* noise */
+    body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");opacity:.018;pointer-events:none;z-index:9999}
+    /* scanlines */
+    body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.025) 3px,rgba(0,0,0,.025) 4px);pointer-events:none;z-index:9998}
+
+    /* ── SIDEBAR ── */
+    .sidebar{position:fixed;left:0;top:0;bottom:0;width:var(--sidebar);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:200;transition:.3s}
+    .logo-wrap{padding:20px 18px 16px;border-bottom:1px solid var(--border)}
+    .logo-top{display:flex;align-items:center;gap:8px}
+    .logo-icon{width:28px;height:28px;background:var(--rust);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 0 16px var(--rust-glow)}
+    .logo-name{font-family:var(--cond);font-size:20px;font-weight:900;letter-spacing:3px;color:var(--rust);text-shadow:0 0 20px var(--rust-glow)}
+    .logo-ver{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:2px;margin-top:3px}
+    .conn-pill{margin:12px 14px;padding:8px 12px;background:var(--bg3);border-radius:4px;border:1px solid var(--border);display:flex;align-items:center;gap:8px;cursor:pointer;transition:.2s}
+    .conn-pill:hover{border-color:var(--border-rust)}
+    .conn-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;transition:.3s}
+    .conn-dot.on{background:var(--green);box-shadow:0 0 8px var(--green-glow);animation:blink 2.5s infinite}
+    .conn-dot.off{background:var(--rust2)}
+    .conn-dot.connecting{background:var(--amber);animation:blink .7s infinite}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+    .conn-info{flex:1;min-width:0}
+    .conn-name{font-family:var(--mono);font-size:10px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .conn-addr{font-family:var(--mono);font-size:9px;color:var(--text3)}
+    nav{flex:1;overflow-y:auto;padding:6px 0}
+    nav::-webkit-scrollbar{width:3px}
+    nav::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+    .nav-grp{padding:14px 14px 4px;font-family:var(--mono);font-size:8px;letter-spacing:2.5px;color:var(--text4);text-transform:uppercase}
+    .nav-item{display:flex;align-items:center;gap:9px;padding:8px 18px;cursor:pointer;font-size:14px;font-weight:500;color:var(--text2);border-left:2px solid transparent;transition:.15s;letter-spacing:.5px;position:relative;user-select:none}
+    .nav-item:hover{background:var(--bg3);color:var(--text);border-left-color:var(--text4)}
+    .nav-item.active{background:rgba(206,66,43,.07);color:var(--rust);border-left-color:var(--rust)}
+    .nav-item .ni{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+    .nav-badge{margin-left:auto;background:var(--rust);color:#fff;font-family:var(--mono);font-size:9px;padding:2px 5px;border-radius:3px;min-width:18px;text-align:center}
+    .nav-badge.amber{background:var(--amber);color:#000}
+    .nav-badge.green{background:var(--green);color:#000}
+    .sidebar-bot{padding:12px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+    .bot-status{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:4px;border:1px solid var(--border)}
+    .bot-avatar{width:28px;height:28px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+    .bot-info{flex:1;min-width:0}
+    .bot-name{font-family:var(--mono);font-size:10px;color:var(--text)}
+    .bot-st{font-family:var(--mono);font-size:9px}
+    .bot-st.on{color:var(--green)} .bot-st.off{color:var(--red)}
+
+    /* ── MAIN ── */
+    .main{margin-left:var(--sidebar);min-height:100vh;display:flex;flex-direction:column}
+    .topbar{height:52px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 28px;gap:16px;position:sticky;top:0;z-index:100}
+    .page-title{font-family:var(--cond);font-size:17px;font-weight:700;letter-spacing:2px;text-transform:uppercase;flex:1}
+    .topbar-chips{display:flex;gap:10px;align-items:center}
+    .chip{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-family:var(--mono);font-size:10px;border:1px solid var(--border);cursor:pointer;transition:.2s}
+    .chip:hover{border-color:var(--border2)}
+    .chip.rust{border-color:var(--border-rust);color:var(--rust)}
+    .chip.green{border-color:var(--border-green);color:var(--green)}
+    .chip.blue{border-color:rgba(88,101,242,.3);color:var(--blue)}
+    .chip.amber{border-color:rgba(245,166,35,.3);color:var(--amber)}
+    .content{flex:1;padding:24px 28px;display:flex;flex-direction:column;gap:24px}
+
+    /* ── PANELS ── */
+    .panel{display:none;animation:fadeIn .2s ease;flex-direction:column;gap:20px}
+    .panel.active{display:flex}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+    /* ── LAYOUT HELPERS ── */
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+    .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+    .col{display:flex;flex-direction:column;gap:18px}
+
+    /* ── CARDS ── */
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:18px 20px}
+    .card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+    .card-title{font-family:var(--cond);font-size:12px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--text2);display:flex;align-items:center;gap:8px}
+    .card-title .ct-icon{font-size:13px}
+    .sec-hd{display:flex;align-items:center;justify-content:space-between}
+    .sec-title{font-family:var(--cond);font-size:15px;font-weight:700;letter-spacing:2px;text-transform:uppercase;display:flex;align-items:center;gap:10px}
+    .sec-title::before{content:'';display:block;width:3px;height:16px;background:var(--rust);border-radius:2px;box-shadow:0 0 8px var(--rust-glow)}
+
+    /* ── STAT CARDS ── */
+    .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:18px;position:relative;overflow:hidden;transition:.2s}
+    .stat-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+    .stat-card.r::after{background:var(--rust);box-shadow:0 0 12px var(--rust-glow)}
+    .stat-card.g::after{background:var(--green);box-shadow:0 0 12px var(--green-glow)}
+    .stat-card.a::after{background:var(--amber);box-shadow:0 0 12px var(--amber-glow)}
+    .stat-card.b::after{background:var(--blue)}
+    .stat-card.c::after{background:var(--cyan)}
+    .s-label{font-family:var(--mono);font-size:8px;letter-spacing:2px;color:var(--text3);text-transform:uppercase;margin-bottom:6px}
+    .s-val{font-family:var(--cond);font-size:36px;font-weight:700;line-height:1}
+    .stat-card.r .s-val{color:var(--rust)} .stat-card.g .s-val{color:var(--green)}
+    .stat-card.a .s-val{color:var(--amber)} .stat-card.b .s-val{color:var(--blue)}
+    .stat-card.c .s-val{color:var(--cyan)}
+    .s-sub{font-size:11px;color:var(--text3);margin-top:4px;font-family:var(--mono)}
+
+    /* ── FORM ELEMENTS ── */
+    .form-group{margin-bottom:14px}
+    .form-group:last-child{margin-bottom:0}
+    .lbl{display:block;font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--text2);text-transform:uppercase;margin-bottom:5px}
+    .lbl-hint{font-size:8px;color:var(--text3);font-weight:400;margin-left:6px;text-transform:none;letter-spacing:0}
+    .inp{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;transition:.2s}
+    .inp:focus{border-color:var(--rust);box-shadow:0 0 0 2px var(--rust-glow)}
+    .inp::placeholder{color:var(--text4)}
+    .inp[type=password]{letter-spacing:2px}
+    select.inp{cursor:pointer;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235A5750'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+    select.inp option{background:var(--bg3)}
+    .inp-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .inp-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    textarea.inp{resize:vertical;min-height:70px;line-height:1.5}
+
+    /* ── BUTTONS ── */
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:4px;font-family:var(--cond);font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;border:none;transition:all .2s;white-space:nowrap}
+    .btn-rust{background:var(--rust);color:#fff;box-shadow:0 0 16px var(--rust-glow)}
+    .btn-rust:hover{background:#d94f37;transform:translateY(-1px);box-shadow:0 0 24px var(--rust-glow)}
+    .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+    .btn-ghost:hover{border-color:var(--rust);color:var(--rust)}
+    .btn-green{background:rgba(61,220,132,.12);color:var(--green);border:1px solid rgba(61,220,132,.3)}
+    .btn-green:hover{background:rgba(61,220,132,.2)}
+    .btn-blue{background:rgba(88,101,242,.15);color:var(--blue);border:1px solid rgba(88,101,242,.3)}
+    .btn-blue:hover{background:rgba(88,101,242,.25)}
+    .btn-amber{background:rgba(245,166,35,.12);color:var(--amber);border:1px solid rgba(245,166,35,.3)}
+    .btn-sm{padding:5px 11px;font-size:11px;letter-spacing:1px}
+    .btn-xs{padding:3px 8px;font-size:10px}
+    .btn-icon{padding:7px 10px}
+    .btns{display:flex;gap:8px;flex-wrap:wrap}
+
+    /* ── TOGGLE ── */
+    .tog{position:relative;width:40px;height:21px;flex-shrink:0}
+    .tog input{opacity:0;width:0;height:0}
+    .tog-sl{position:absolute;inset:0;background:var(--bg5);border-radius:21px;transition:.3s;border:1px solid var(--border2);cursor:pointer}
+    .tog-sl::before{content:'';position:absolute;width:15px;height:15px;left:2px;top:2px;background:var(--text3);border-radius:50%;transition:.3s}
+    .tog input:checked+.tog-sl{background:rgba(61,220,132,.15);border-color:var(--green)}
+    .tog input:checked+.tog-sl::before{transform:translateX(18px);background:var(--green);box-shadow:0 0 6px var(--green-glow)}
+
+    /* ── SETTING ROW ── */
+    .sr{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border)}
+    .sr:last-child{border-bottom:none}
+    .sr-info .sr-name{font-size:14px;font-weight:600;letter-spacing:.5px}
+    .sr-info .sr-desc{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px}
+    .sr-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+
+    /* ── ALERT ITEMS ── */
+    .alert-list{display:flex;flex-direction:column;gap:7px}
+    .ai{background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:10px 14px;display:flex;align-items:center;gap:12px;animation:slideIn .25s ease}
+    @keyframes slideIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+    .ai.raid{border-left:3px solid var(--rust);background:rgba(206,66,43,.04)}
+    .ai.alarm{border-left:3px solid var(--amber);background:rgba(245,166,35,.04)}
+    .ai.team{border-left:3px solid var(--blue);background:rgba(88,101,242,.04)}
+    .ai.death{border-left:3px solid var(--red);background:rgba(255,59,48,.04)}
+    .ai.event{border-left:3px solid var(--cyan);background:rgba(0,212,255,.04)}
+    .ai.info{border-left:3px solid var(--text3)}
+    .ai-icon{font-size:17px;flex-shrink:0}
+    .ai-body{flex:1;min-width:0}
+    .ai-title{font-size:13px;font-weight:600;letter-spacing:.3px}
+    .ai-detail{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ai-time{font-family:var(--mono);font-size:10px;color:var(--text4);flex-shrink:0}
+
+    /* ── SWITCH CARDS ── */
+    .sw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+    .sw-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:14px;transition:.2s;position:relative;overflow:hidden}
+    .sw-card.on{border-color:rgba(61,220,132,.35);background:rgba(61,220,132,.04)}
+    .sw-card.on::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--green);box-shadow:0 0 8px var(--green-glow)}
+    .sw-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+    .sw-icon{font-size:20px}
+    .sw-name{font-family:var(--cond);font-size:14px;font-weight:700;letter-spacing:.5px}
+    .sw-status{font-family:var(--mono);font-size:9px;margin-top:2px}
+    .sw-status.on{color:var(--green)} .sw-status.off{color:var(--text3)}
+    .sw-meta{font-family:var(--mono);font-size:8px;color:var(--text4);margin-top:6px;display:flex;gap:8px}
+
+    /* ── ALARM CARDS ── */
+    .alm-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:16px 18px;display:flex;align-items:center;gap:14px}
+    .alm-icon{font-size:22px;flex-shrink:0}
+    .alm-body{flex:1;min-width:0}
+    .alm-name{font-family:var(--cond);font-size:15px;font-weight:700;letter-spacing:1px}
+    .alm-note{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:3px}
+    .alm-meta{display:flex;gap:12px;margin-top:6px;flex-wrap:wrap}
+    .alm-tag{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:3px;border:1px solid var(--border2);color:var(--text2)}
+    .alm-tag.voice{border-color:rgba(88,101,242,.4);color:var(--blue)}
+    .alm-tag.chat{border-color:rgba(61,220,132,.3);color:var(--green)}
+    .alm-tag.ping{border-color:rgba(245,166,35,.3);color:var(--amber)}
+    .alm-tag.discord{border-color:rgba(88,101,242,.3);color:var(--blue)}
+    .alm-controls{display:flex;align-items:center;gap:10px;flex-shrink:0}
+
+    /* ── ROLE KEYWORD ROWS ── */
+    .kw-row{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+    .kw-row:last-child{border-bottom:none}
+    .kw-badge{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:3px;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.25);color:var(--amber)}
+
+    /* ── VOICE CHANNEL STATUS ── */
+    .voice-status{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg3);border-radius:5px;border:1px solid var(--border)}
+    .voice-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .voice-dot.active{background:var(--green);box-shadow:0 0 8px var(--green-glow);animation:blink 1.5s infinite}
+    .voice-dot.inactive{background:var(--text4)}
+    .voice-info{flex:1}
+    .voice-name{font-family:var(--mono);font-size:11px;color:var(--text)}
+    .voice-detail{font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:1px}
+    .voice-wave{display:flex;gap:3px;align-items:center;height:20px}
+    .vw-bar{width:3px;background:var(--green);border-radius:2px;animation:wave var(--d) ease-in-out infinite alternate}
+    @keyframes wave{from{height:4px}to{height:16px}}
+
+    /* ── PLAYER TRACKER TABLE ── */
+    .ptable{width:100%;border-collapse:collapse}
+    .ptable th{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;padding:6px 12px;border-bottom:1px solid var(--border);text-align:left;font-weight:400}
+    .ptable td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;font-weight:500}
+    .ptable tr:last-child td{border-bottom:none}
+    .ptable tr:hover td{background:var(--bg3)}
+    .player-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+    .player-dot.on{background:var(--green)}
+    .player-dot.off{background:var(--text4)}
+    .hp-bar{height:3px;background:var(--bg5);border-radius:3px;width:60px;margin-top:3px}
+    .hp-fill{height:100%;border-radius:3px;background:var(--green);transition:width .5s}
+
+    /* ── COUNTDOWN ── */
+    .cd-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center}
+    .cd-seg{background:var(--bg3);border-radius:4px;padding:14px 8px}
+    .cd-num{font-family:var(--cond);font-size:34px;font-weight:700;color:var(--rust);line-height:1}
+    .cd-lbl{font-family:var(--mono);font-size:8px;color:var(--text3);letter-spacing:1.5px;margin-top:4px}
+
+    /* ── TABS ── */
+    .tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:18px}
+    .tab{padding:7px 14px;font-family:var(--cond);font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s}
+    .tab:hover{color:var(--text)}
+    .tab.active{color:var(--rust);border-bottom-color:var(--rust)}
+
+    /* ── CHANNEL PICKER ── */
+    .ch-pick-wrap{position:relative}
+    .ch-pick-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:14px;pointer-events:none}
+    .ch-pick-wrap .inp{padding-left:30px}
+
+    /* ── PROGRESS BAR ── */
+    .pbar{height:4px;background:var(--bg5);border-radius:4px;overflow:hidden;margin-top:6px}
+    .pbar-fill{height:100%;border-radius:4px;transition:width .5s}
+    .pbar-fill.r{background:var(--rust)} .pbar-fill.g{background:var(--green)} .pbar-fill.a{background:var(--amber)}
+
+    /* ── MODAL ── */
+    .modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:1000}
+    .modal-ov.open{display:flex}
+    .modal{background:var(--bg2);border:1px solid var(--border-rust);border-radius:8px;padding:26px;width:460px;max-width:95vw;box-shadow:0 24px 80px rgba(0,0,0,.7),0 0 40px var(--rust-glow)}
+    .modal-title{font-family:var(--cond);font-size:19px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:var(--rust);margin-bottom:18px}
+    .modal-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+
+    /* ── TOAST ── */
+    .toast-wrap{position:fixed;bottom:20px;right:20px;z-index:9000;display:flex;flex-direction:column;gap:6px}
+    .toast{background:var(--bg3);border:1px solid var(--border2);border-radius:5px;padding:10px 14px;min-width:260px;box-shadow:0 8px 28px rgba(0,0,0,.5);display:flex;align-items:center;gap:9px;animation:toastIn .3s ease;cursor:pointer}
+    .toast:hover{opacity:.8}
+    .toast.raid{border-left:3px solid var(--rust)} .toast.success{border-left:3px solid var(--green)} .toast.info{border-left:3px solid var(--blue)} .toast.warn{border-left:3px solid var(--amber)}
+    @keyframes toastIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+    .toast-icon{font-size:17px;flex-shrink:0}
+    .toast-body .toast-msg{font-size:13px;font-weight:600}
+    .toast-body .toast-sub{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:1px}
+
+    /* ── BADGE ── */
+    .badge{display:inline-block;font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;vertical-align:middle}
+    .badge.on{background:rgba(61,220,132,.15);border:1px solid rgba(61,220,132,.3);color:var(--green)}
+    .badge.off{background:rgba(90,87,80,.15);border:1px solid var(--border);color:var(--text3)}
+    .badge.raid{background:rgba(206,66,43,.15);border:1px solid var(--border-rust);color:var(--rust)}
+    .badge.voice{background:rgba(88,101,242,.15);border:1px solid rgba(88,101,242,.3);color:var(--blue)}
+
+    /* ── MAP ── */
+    .map-box{background:var(--bg2);border:1px solid var(--border);border-radius:6px;aspect-ratio:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:300px}
+    .map-grid-bg{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.015) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.015) 1px,transparent 1px);background-size:30px 30px}
+    .map-placeholder{position:relative;text-align:center;color:var(--text3);font-family:var(--mono);font-size:11px}
+
+    /* ── CHAT LOG ── */
+    .chat-log{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;padding-right:4px}
+    .chat-log::-webkit-scrollbar{width:3px}
+    .chat-log::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+    .chat-msg{padding:7px 10px;border-radius:4px;background:var(--bg3);border:1px solid var(--border)}
+    .chat-msg .cm-name{font-family:var(--mono);font-size:10px;color:var(--amber);margin-bottom:2px}
+    .chat-msg .cm-text{font-size:13px;font-weight:500}
+    .chat-msg .cm-time{font-family:var(--mono);font-size:9px;color:var(--text4);float:right}
+    .chat-input-row{display:flex;gap:8px;margin-top:10px}
+
+    /* ── DISCORD PANEL PREVIEW ── */
+    .discord-preview{background:#36393F;border-radius:6px;padding:16px;font-family:'Whitney',var(--raj),sans-serif}
+    .dc-channel-name{color:#8e9297;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+    .dc-msg{display:flex;gap:12px;margin-bottom:12px}
+    .dc-avatar{width:36px;height:36px;border-radius:50%;flex-shrink:0;background:var(--rust);display:flex;align-items:center;justify-content:center;font-size:14px}
+    .dc-body .dc-name{font-weight:700;font-size:14px;color:#fff;margin-bottom:2px}
+    .dc-body .dc-name .dc-bot-tag{font-size:9px;background:#5865F2;padding:2px 4px;border-radius:3px;color:#fff;margin-left:4px;font-weight:400;vertical-align:middle}
+    .dc-embed{background:#2B2D31;border-left:4px solid var(--rust);border-radius:4px;padding:12px;margin-top:6px}
+    .dc-embed-title{font-weight:700;font-size:14px;color:#fff;margin-bottom:4px}
+    .dc-embed-desc{font-size:13px;color:#B9BBBE}
+    .dc-sw-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+    .dc-sw-row:last-child{border-bottom:none}
+    .dc-sw-name{color:#DCDDDE;font-size:13px}
+    .dc-sw-btn{padding:4px 12px;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;border:none}
+    .dc-sw-btn.on{background:#3DDC84;color:#000}
+    .dc-sw-btn.off{background:#36393F;color:#8e9297;border:1px solid #4F545C}
+
+    /* ── INGAME COMMANDS ── */
+    .cmd-row{padding:10px 0;border-bottom:1px solid var(--border);display:grid;grid-template-columns:140px 1fr auto;gap:12px;align-items:center}
+    .cmd-row:last-child{border-bottom:none}
+    .cmd-name{font-family:var(--mono);font-size:12px;color:var(--cyan)}
+    .cmd-desc{font-size:13px;color:var(--text2)}
+
+    /* ─────────── RESPONSIVE ─────────── */
+    @media(max-width:1200px){.grid4{grid-template-columns:repeat(2,1fr)}.grid3{grid-template-columns:1fr 1fr}}
+    @media(max-width:900px){.grid2,.grid3,.grid4{grid-template-columns:1fr}.kw-row{grid-template-columns:1fr 1fr auto}}
+    @media(max-width:700px){:root{--sidebar:0px}.sidebar{transform:translateX(-220px)}.main{margin-left:0}}
+
+    /* ─────────── LOCK SCREEN ─────────── */
+    #lockScreen{position:fixed;inset:0;background:var(--bg);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;}
+    #lockScreen.hidden{display:none;}
+    .lock-wrap{text-align:center;width:340px;}
+    .lock-flame{font-size:52px;margin-bottom:12px;filter:drop-shadow(0 0 20px rgba(206,66,43,.6));animation:flicker 3s ease-in-out infinite;}
+    @keyframes flicker{0%,100%{filter:drop-shadow(0 0 20px rgba(206,66,43,.6));}50%{filter:drop-shadow(0 0 36px rgba(206,66,43,.9));}}
+    .lock-title{font-family:var(--cond);font-size:32px;font-weight:900;letter-spacing:5px;color:var(--rust);text-shadow:0 0 30px var(--rust-glow);margin-bottom:4px;}
+    .lock-sub{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:2px;margin-bottom:36px;}
+    .lock-dots{display:flex;justify-content:center;gap:14px;margin-bottom:28px;}
+    .lock-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--text3);background:transparent;transition:.25s;}
+    .lock-dot.filled{background:var(--rust);border-color:var(--rust);box-shadow:0 0 12px var(--rust-glow);}
+    .lock-dot.wrong{background:var(--red);border-color:var(--red);animation:shake .4s ease;}
+    @keyframes shake{0%,100%{transform:none;}25%{transform:translateX(-6px);}75%{transform:translateX(6px);}}
+    .lock-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:240px;margin:0 auto 20px;}
+    .lock-key{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 8px;font-family:var(--cond);font-size:22px;font-weight:700;color:var(--text);cursor:pointer;transition:.15s;user-select:none;}
+    .lock-key:hover{background:var(--bg3);border-color:var(--border2);transform:scale(1.05);}
+    .lock-key:active{transform:scale(.96);background:rgba(206,66,43,.15);border-color:var(--rust);}
+    .lock-key.del{font-size:16px;color:var(--text3);}
+    .lock-key.zero{grid-column:2;}
+    .lock-err{font-family:var(--mono);font-size:11px;color:var(--red);min-height:18px;margin-top:4px;letter-spacing:1px;}
+    .lock-hint{font-family:var(--mono);font-size:9px;color:var(--text4);margin-top:16px;}
+
+    /* ─────────── SAVED BADGE ─────────── */
+    .saved-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;background:rgba(61,220,132,.1);border:1px solid rgba(61,220,132,.25);border-radius:20px;font-family:var(--mono);font-size:9px;color:var(--green);margin-left:8px;opacity:0;transition:.3s;}
+    .saved-badge.show{opacity:1;}
+
+    /* ─────────── HIDDEN STEAM FIELD ─────────── */
+    .steam-hidden{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:9px 11px;font-family:var(--mono);font-size:12px;color:var(--text3);display:flex;align-items:center;justify-content:space-between;cursor:default;}
+    .steam-hidden .sh-val{color:var(--text4);font-size:11px;}
+    .steam-reveal-btn{font-family:var(--mono);font-size:9px;color:var(--rust);cursor:pointer;text-decoration:underline;flex-shrink:0;margin-left:8px;}
+    .steam-reveal-btn:hover{color:var(--amber);}
+
+    /* ─────────── ADMIN LOCK ─────────── */
+    .nav-item.admin-only{position:relative;}
+    .nav-item.admin-only .admin-lock-ico{font-size:9px;color:var(--text4);margin-left:auto;flex-shrink:0;}
+    .nav-item.admin-only.locked{opacity:.38;pointer-events:none;cursor:not-allowed;}
+    .nav-item.admin-only.locked::after{content:'🔒';position:absolute;right:12px;font-size:10px;opacity:.5;}
+    .mode-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-family:var(--mono);font-size:9px;letter-spacing:1px;border:1px solid;}
+    .mode-badge.admin{background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.4);color:var(--amber);}
+    .mode-badge.user{background:rgba(61,220,132,.08);border-color:rgba(61,220,132,.25);color:var(--green);}
+    .admin-banner{background:rgba(245,166,35,.07);border-bottom:1px solid rgba(245,166,35,.2);padding:6px 28px;display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10px;color:var(--amber);}
+    .admin-banner.hidden{display:none;}
+    .admin-grd{opacity:.35;pointer-events:none;user-select:none;filter:blur(1px);}
+
+    /* ─────────── BRANDING ─────────── */
+    .branding{padding:8px 14px 10px;border-top:1px solid var(--border);text-align:center;}
+    .branding-text{font-family:var(--mono);font-size:8px;color:var(--text4);letter-spacing:1.5px;line-height:1.7;}
+    .branding-name{color:var(--rust);font-size:9px;font-weight:bold;letter-spacing:2px;}
+
+    /* ─────────── RAID NOTES ─────────── */
+    .note-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden;transition:.2s;}
+    .note-card:hover{border-color:var(--border2);}
+    .note-card.pinned{border-color:rgba(245,166,35,.4);background:rgba(245,166,35,.03);}
+    .note-card.pinned::before{content:'';display:block;height:2px;background:var(--amber);box-shadow:0 0 10px var(--amber-glow);}
+    .note-card.danger{border-color:rgba(206,66,43,.45);background:rgba(206,66,43,.03);}
+    .note-card.danger::before{content:'';display:block;height:2px;background:var(--rust);box-shadow:0 0 10px var(--rust-glow);}
+    .note-card.info{border-color:rgba(88,101,242,.35);}
+    .note-card.info::before{content:'';display:block;height:2px;background:var(--blue);}
+    .note-card.success{border-color:rgba(61,220,132,.35);}
+    .note-card.success::before{content:'';display:block;height:2px;background:var(--green);}
+    .note-inner{padding:14px 16px;}
+    .note-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;}
+    .note-tag{font-family:var(--mono);font-size:8px;letter-spacing:2px;text-transform:uppercase;padding:2px 7px;border-radius:3px;border:1px solid;flex-shrink:0;margin-top:2px;}
+    .note-tag.raid{color:var(--rust);border-color:rgba(206,66,43,.4);background:rgba(206,66,43,.08);}
+    .note-tag.intel{color:var(--blue);border-color:rgba(88,101,242,.35);background:rgba(88,101,242,.08);}
+    .note-tag.loot{color:var(--green);border-color:rgba(61,220,132,.3);background:rgba(61,220,132,.08);}
+    .note-tag.warning{color:var(--amber);border-color:rgba(245,166,35,.35);background:rgba(245,166,35,.08);}
+    .note-tag.plan{color:var(--cyan);border-color:rgba(0,212,255,.3);background:rgba(0,212,255,.06);}
+    .note-title-text{font-family:var(--cond);font-size:16px;font-weight:700;letter-spacing:.5px;flex:1;line-height:1.2;}
+    .note-body{font-size:13px;color:var(--text2);line-height:1.65;white-space:pre-wrap;word-break:break-word;}
+    .note-footer{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);}
+    .note-author{font-family:var(--mono);font-size:9px;color:var(--text3);}
+    .note-time{font-family:var(--mono);font-size:9px;color:var(--text4);margin-left:auto;}
+    .note-actions{display:flex;gap:6px;}
+    .note-pin-btn{font-family:var(--mono);font-size:9px;cursor:pointer;padding:2px 7px;border-radius:3px;border:1px solid var(--border);color:var(--text3);background:transparent;transition:.15s;}
+    .note-pin-btn:hover{border-color:var(--amber);color:var(--amber);}
+    .note-del-btn{font-family:var(--mono);font-size:9px;cursor:pointer;padding:2px 7px;border-radius:3px;border:1px solid var(--border);color:var(--text3);background:transparent;transition:.15s;}
+    .note-del-btn:hover{border-color:var(--red);color:var(--red);}
+    .notes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;}
+    .notes-empty{text-align:center;padding:60px 20px;font-family:var(--mono);font-size:12px;color:var(--text3);}
+    .notes-empty .big{font-size:40px;display:block;margin-bottom:10px;opacity:.3;}
+  </style>
+</head>
+<body>
+
+<!-- ══════════ LOCK SCREEN ══════════ -->
+<div id="lockScreen">
+  <div class="lock-wrap">
+    <div class="lock-flame">🔥</div>
+    <div class="lock-title">RUST LINK</div>
+    <div class="lock-sub" id="lockSub">// ENTER ACCESS CODE TO CONTINUE</div>
+    <div class="lock-dots" id="lockDots">
+      <div class="lock-dot" id="ld0"></div>
+      <div class="lock-dot" id="ld1"></div>
+      <div class="lock-dot" id="ld2"></div>
+      <div class="lock-dot" id="ld3"></div>
+    </div>
+    <div class="lock-pad">
+      <div class="lock-key" onclick="lockKey('1')">1</div>
+      <div class="lock-key" onclick="lockKey('2')">2</div>
+      <div class="lock-key" onclick="lockKey('3')">3</div>
+      <div class="lock-key" onclick="lockKey('4')">4</div>
+      <div class="lock-key" onclick="lockKey('5')">5</div>
+      <div class="lock-key" onclick="lockKey('6')">6</div>
+      <div class="lock-key" onclick="lockKey('7')">7</div>
+      <div class="lock-key" onclick="lockKey('8')">8</div>
+      <div class="lock-key" onclick="lockKey('9')">9</div>
+      <div class="lock-key del" onclick="lockDel()">⌫</div>
+      <div class="lock-key zero" onclick="lockKey('0')">0</div>
+    </div>
+    <div class="lock-err" id="lockErr"></div>
+    <div class="lock-hint" id="lockHint">Enter team code or admin code</div>
+  </div>
+</div>
+
+<!-- ══════════ SIDEBAR ══════════ -->
+<aside class="sidebar">
+  <div class="logo-wrap">
+    <div class="logo-top">
+      <div class="logo-icon">🔥</div>
+      <div class="logo-name">RUST LINK</div>
+    </div>
+    <div class="logo-ver" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+      <span>// COMMAND CENTER v2.0</span>
+      <span class="mode-badge user" id="modeBadge">USER</span>
+    </div>
+  </div>
+
+  <div class="conn-pill" onclick="navTo('connect',this)">
+    <div class="conn-dot off" id="connDot"></div>
+    <div class="conn-info">
+      <div class="conn-name" id="connName">Not Connected</div>
+      <div class="conn-addr" id="connAddr">Tap to configure</div>
+    </div>
+    <span style="font-size:10px;color:var(--text3)">⚙</span>
+  </div>
+
+  <nav>
+    <div class="nav-grp">// Overview</div>
+    <div class="nav-item active" data-panel="dashboard" onclick="navTo('dashboard',this)"><span class="ni">⬡</span>Dashboard</div>
+
+    <div class="nav-grp">// Control</div>
+    <div class="nav-item" data-panel="switches" onclick="navTo('switches',this)"><span class="ni">⚡</span>Smart Switches<span class="nav-badge green" id="sw-badge">6</span></div>
+    <div class="nav-item" data-panel="alarms" onclick="navTo('alarms',this)"><span class="ni">🔔</span>Smart Alarms<span class="nav-badge amber" id="alm-badge">4</span></div>
+
+    <div class="nav-grp">// Monitoring</div>
+    <div class="nav-item" data-panel="alerts" onclick="navTo('alerts',this)"><span class="ni">🚨</span>Alert Feed<span class="nav-badge" id="alert-badge">5</span></div>
+    <div class="nav-item" data-panel="team" onclick="navTo('team',this)"><span class="ni">👥</span>Team & Chat</div>
+    <div class="nav-item" data-panel="raid-notes" onclick="navTo('raid-notes',this)"><span class="ni">📋</span>Raid Notes</div>
+    <div class="nav-item" data-panel="map" onclick="navTo('map',this)"><span class="ni">🗺</span>Map & Events</div>
+    <div class="nav-item" data-panel="tracker" onclick="navTo('tracker',this)"><span class="ni">📊</span>Player Tracker</div>
+
+    <div class="nav-grp">// Discord <span style="font-size:8px;color:var(--amber);margin-left:4px;">ADMIN</span></div>
+    <div class="nav-item admin-only locked" id="nav-discord-channels" data-panel="discord-channels" onclick="adminNavTo('discord-channels',this)"><span class="ni">📢</span>Channel Setup</div>
+    <div class="nav-item admin-only locked" id="nav-discord-roles" data-panel="discord-roles" onclick="adminNavTo('discord-roles',this)"><span class="ni">🏷</span>Role Alerts</div>
+    <div class="nav-item admin-only locked" id="nav-discord-voice" data-panel="discord-voice" onclick="adminNavTo('discord-voice',this)"><span class="ni">🔊</span>Voice Alerts</div>
+    <div class="nav-item admin-only locked" id="nav-discord-switches" data-panel="discord-switches" onclick="adminNavTo('discord-switches',this)"><span class="ni">🎛</span>Switch Panel</div>
+
+    <div class="nav-grp">// Config <span style="font-size:8px;color:var(--amber);margin-left:4px;">ADMIN</span></div>
+    <div class="nav-item admin-only locked" id="nav-ingame-cmds" data-panel="ingame-cmds" onclick="adminNavTo('ingame-cmds',this)"><span class="ni">💬</span>In-Game Commands</div>
+    <div class="nav-item admin-only locked" id="nav-settings" data-panel="settings" onclick="adminNavTo('settings',this)"><span class="ni">⚙</span>Settings</div>
+    <div class="nav-item admin-only locked" id="nav-connect" data-panel="connect" onclick="adminNavTo('connect',this)"><span class="ni">🔗</span>Connection</div>
+  </nav>
+
+  <div class="sidebar-bot">
+    <div class="bot-status">
+      <div class="bot-avatar">🤖</div>
+      <div class="bot-info">
+        <div class="bot-name" id="botName">RustLink#0001</div>
+        <div class="bot-st off" id="botStatus">● Offline</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;font-size:10px;" onclick="lockOut()">🔒 Lock</button>
+      <button class="btn btn-ghost btn-sm" id="adminModeBtn" style="flex:1;justify-content:center;font-size:10px;" onclick="promptAdminMode()">⚙ Admin</button>
+    </div>
+  </div>
+
+  <div class="branding">
+    <div class="branding-text">POWERED BY</div>
+    <div class="branding-name">DAMO UNKNOWN</div>
+    <div class="branding-text" style="margin-top:2px;">RUST LINK v2.0 · 2025</div>
+  </div>
+</aside>
+
+<!-- Admin banner (shown at top of content when in admin mode) -->
+<div class="admin-banner hidden" id="adminBanner">
+  ⚡ ADMIN MODE ACTIVE — You have full access to all settings and configuration.
+  <button class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:9px;" onclick="exitAdminMode()">Exit Admin</button>
+</div>
+
+<!-- ══════════ MAIN ══════════ -->
+<main class="main">
+  <div class="topbar">
+    <div class="page-title" id="pageTitle">Dashboard</div>
+    <div class="topbar-chips">
+      <div class="chip green" id="chip-conn">◉ Disconnected</div>
+      <div class="chip blue" id="chip-bot">🤖 Bot Offline</div>
+      <div class="chip amber" id="chip-voice">🔊 Voice Idle</div>
+      <div class="chip rust" style="cursor:pointer" onclick="navTo('alerts',document.querySelector('[data-panel=alerts]'))">🚨 <span id="chip-alerts">5</span> Alerts</div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ══════ DASHBOARD ══════ -->
+    <div class="panel active" id="panel-dashboard">
+      <div class="grid4">
+        <div class="stat-card r"><div class="s-label">Raids Detected</div><div class="s-val">3</div><div class="s-sub">This wipe</div></div>
+        <div class="stat-card g"><div class="s-label">Switches ON</div><div class="s-val" id="dash-sw">2/6</div><div class="s-sub">Active right now</div></div>
+        <div class="stat-card a"><div class="s-label">Alarms Active</div><div class="s-val">4</div><div class="s-sub">Configured</div></div>
+        <div class="stat-card b"><div class="s-label">Team Online</div><div class="s-val">2/4</div><div class="s-sub">In-game now</div></div>
+        <div class="stat-card c"><div class="s-label">Player Count</div><div class="s-val">142</div><div class="s-sub">/ 200 max</div></div>
+        <div class="stat-card g"><div class="s-label">Pop Last 30m</div><div class="s-val">+18</div><div class="s-sub">Players joined</div></div>
+        <div class="stat-card a"><div class="s-label">In-Game Time</div><div class="s-val" id="dash-time">14:32</div><div class="s-sub" id="dash-daynight">☀ Day · 2h to night</div></div>
+        <div class="stat-card r"><div class="s-label">Days Since Wipe</div><div class="s-val">12</div><div class="s-sub">Wipe in 4d 12h</div></div>
+      </div>
+
+      <div class="grid2">
+        <div class="col">
+          <div>
+            <div class="sec-hd" style="margin-bottom:14px"><div class="sec-title">Recent Alerts</div><button class="btn btn-ghost btn-sm" onclick="navTo('alerts',document.querySelector('[data-panel=alerts]'))">All Alerts →</button></div>
+            <div class="alert-list" id="dash-alerts"></div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">📅</span>Wipe Countdown</div></div>
+            <div class="cd-grid">
+              <div class="cd-seg"><div class="cd-num" id="cd-d">04</div><div class="cd-lbl">DAYS</div></div>
+              <div class="cd-seg"><div class="cd-num" id="cd-h">12</div><div class="cd-lbl">HRS</div></div>
+              <div class="cd-seg"><div class="cd-num" id="cd-m">33</div><div class="cd-lbl">MINS</div></div>
+              <div class="cd-seg"><div class="cd-num" id="cd-s">07</div><div class="cd-lbl">SECS</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">🌐</span>Server Info</div></div>
+            <div class="grid2" style="gap:8px">
+              <div style="background:var(--bg3);border-radius:4px;padding:10px 12px"><div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:4px">POPULATION</div><div style="font-family:var(--cond);font-size:20px;font-weight:700">142/200</div><div class="pbar"><div class="pbar-fill r" style="width:71%"></div></div></div>
+              <div style="background:var(--bg3);border-radius:4px;padding:10px 12px"><div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:4px">QUEUED</div><div style="font-family:var(--cond);font-size:20px;font-weight:700">8</div></div>
+              <div style="background:var(--bg3);border-radius:4px;padding:10px 12px"><div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:4px">MAP SIZE</div><div style="font-family:var(--cond);font-size:20px;font-weight:700">4500</div></div>
+              <div style="background:var(--bg3);border-radius:4px;padding:10px 12px"><div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:4px">PING</div><div style="font-family:var(--cond);font-size:20px;font-weight:700;color:var(--green)">24ms</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">🔊</span>Voice Alert Status</div></div>
+            <div class="voice-status" id="voiceStatusBox">
+              <div class="voice-dot inactive" id="voiceDot"></div>
+              <div class="voice-info">
+                <div class="voice-name" id="voiceStatusName">Bot not in a voice channel</div>
+                <div class="voice-detail" id="voiceStatusDetail">Configure in Voice Alerts tab</div>
+              </div>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px">
+              <button class="btn btn-blue btn-sm" onclick="joinVoice()">🔊 Join Channel</button>
+              <button class="btn btn-ghost btn-sm" onclick="leaveVoice()">Leave</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ SMART SWITCHES ══════ -->
+    <div class="panel" id="panel-switches">
+      <div class="sec-hd">
+        <div class="sec-title">Smart Switches</div>
+        <div class="btns">
+          <button class="btn btn-green btn-sm" onclick="allSwitches(true)">⚡ All ON</button>
+          <button class="btn btn-ghost btn-sm" onclick="allSwitches(false)">⬛ All OFF</button>
+          <button class="btn btn-rust" onclick="openModal('modal-sw')">＋ Add Switch</button>
+        </div>
+      </div>
+      <div class="sw-grid" id="swGrid"></div>
+      <div class="card">
+        <div class="card-hd"><div class="card-title"><span class="ct-icon">🎛</span>Discord Switch Panel Preview</div><button class="btn btn-blue btn-sm" onclick="navTo('discord-switches',document.querySelector('[data-panel=discord-switches]'))">Configure →</button></div>
+        <div class="discord-preview">
+          <div class="dc-channel-name"># 🎛 switches</div>
+          <div class="dc-msg">
+            <div class="dc-avatar">🤖</div>
+            <div class="dc-body">
+              <div class="dc-name">RustLink <span class="dc-bot-tag">BOT</span></div>
+              <div class="dc-embed">
+                <div class="dc-embed-title">⚡ Smart Switch Panel</div>
+                <div class="dc-embed-desc" style="margin-bottom:10px">Click buttons to toggle — changes apply instantly in-game</div>
+                <div id="dcSwPreview"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ SMART ALARMS ══════ -->
+    <div class="panel" id="panel-alarms">
+      <div class="sec-hd">
+        <div class="sec-title">Smart Alarms</div>
+        <button class="btn btn-rust" onclick="openModal('modal-alm')">＋ Add Alarm</button>
+      </div>
+      <div id="almList" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
+    <!-- ══════ ALERT FEED ══════ -->
+    <div class="panel" id="panel-alerts">
+      <div class="sec-hd">
+        <div class="sec-title">Alert Feed</div>
+        <button class="btn btn-ghost btn-sm" onclick="clearAlerts()">🗑 Clear</button>
+      </div>
+      <div class="tabs">
+        <div class="tab active" onclick="filterAlerts('all',this)">All</div>
+        <div class="tab" onclick="filterAlerts('raid',this)">💥 Raids</div>
+        <div class="tab" onclick="filterAlerts('alarm',this)">🔔 Alarms</div>
+        <div class="tab" onclick="filterAlerts('death',this)">💀 Deaths</div>
+        <div class="tab" onclick="filterAlerts('team',this)">💬 Team Chat</div>
+        <div class="tab" onclick="filterAlerts('event',this)">🚁 Events</div>
+      </div>
+      <div class="alert-list" id="alertFeed"></div>
+    </div>
+
+    <!-- ══════ TEAM & CHAT ══════ -->
+    <div class="panel" id="panel-team">
+      <div class="sec-title" style="margin-bottom:16px">Team & Chat</div>
+      <div class="grid2">
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">👥</span>Team Members</div></div>
+            <table class="ptable" id="teamTable">
+              <thead><tr><th>Player</th><th>HP</th><th>Grid</th><th>Status</th></tr></thead>
+              <tbody id="teamTbody"></tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">💀</span>Recent Deaths</div></div>
+            <div class="alert-list" id="deathFeed"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">💬</span>Team Chat</div></div>
+          <div class="chat-log" id="chatLog"></div>
+          <div class="chat-input-row">
+            <input class="inp" placeholder="Send to team chat…" id="chatInp" style="flex:1" onkeydown="if(event.key==='Enter')sendChat()">
+            <button class="btn btn-rust btn-sm" onclick="sendChat()">Send</button>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <div class="sr" style="padding:8px 0;border:none;width:100%">
+              <div class="sr-info"><div class="sr-name" style="font-size:13px">Relay in-game chat → Discord</div><div class="sr-desc">Post team messages to your Discord channel</div></div>
+              <label class="tog"><input type="checkbox" checked id="relayToDiscord"><div class="tog-sl"></div></label>
+            </div>
+            <div class="sr" style="padding:8px 0;border:none;width:100%">
+              <div class="sr-info"><div class="sr-name" style="font-size:13px">Relay Discord → in-game chat</div><div class="sr-desc">Bot posts Discord messages into team chat</div></div>
+              <label class="tog"><input type="checkbox" id="relayFromDiscord"><div class="tog-sl"></div></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ MAP & EVENTS ══════ -->
+    <div class="panel" id="panel-map">
+      <div class="sec-title" style="margin-bottom:16px">Map & Events</div>
+      <div class="grid2">
+        <div class="map-box">
+          <div class="map-grid-bg"></div>
+          <div class="map-placeholder"><span style="font-size:36px;display:block;margin-bottom:8px">🗺</span>Connect to load live map</div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">📡</span>Active Events</div></div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div class="ai event"><div class="ai-icon">🚁</div><div class="ai-body"><div class="ai-title">Patrol Helicopter</div><div class="ai-detail">Active · Grid H4 · Approaching base</div></div><span class="badge on">LIVE</span></div>
+              <div class="ai info" style="opacity:.5"><div class="ai-icon">🚢</div><div class="ai-body"><div class="ai-title">Cargo Ship</div><div class="ai-detail">Departed 2h ago</div></div><span class="badge off">GONE</span></div>
+              <div class="ai info" style="opacity:.5"><div class="ai-icon">🤖</div><div class="ai-body"><div class="ai-title">Bradley APC</div><div class="ai-detail">Not detected</div></div><span class="badge off">IDLE</span></div>
+              <div class="ai info" style="opacity:.5"><div class="ai-icon">✈️</div><div class="ai-body"><div class="ai-title">Chinook CH47</div><div class="ai-detail">Not detected</div></div><span class="badge off">IDLE</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">⏱</span>Monument Timers</div></div>
+            <div style="font-family:var(--mono);font-size:11px;display:flex;flex-direction:column;gap:0">
+              <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span>Oil Rig</span><span style="color:var(--green)">CLEAR · 4m 12s</span></div>
+              <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span>Large Oil Rig</span><span style="color:var(--rust)">ACTIVE</span></div>
+              <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span>Cargo Ship</span><span style="color:var(--text3)">DEPARTED</span></div>
+              <div style="display:flex;justify-content:space-between;padding:7px 0"><span>Chinook Drop</span><span style="color:var(--text3)">NOT SEEN</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ PLAYER TRACKER ══════ -->
+    <div class="panel" id="panel-tracker">
+      <div class="sec-hd" style="margin-bottom:16px">
+        <div class="sec-title">Player Tracker</div>
+        <div class="chip amber">⏱ Last 30 min: +18 joined · -5 left</div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">📈</span>Population History</div></div>
+          <canvas id="popChart" height="120" style="width:100%"></canvas>
+          <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:6px"><span>-30m</span><span>-20m</span><span>-10m</span><span>Now</span></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">🕐</span>Join/Leave Log (30m)</div></div>
+          <div style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto" id="joinLeaveLog">
+            <div class="ai event" style="animation:none"><div class="ai-icon">→</div><div class="ai-body"><div class="ai-title" style="font-size:12px">Player123 joined</div><div class="ai-detail">5m ago</div></div></div>
+            <div class="ai raid" style="animation:none"><div class="ai-icon">←</div><div class="ai-body"><div class="ai-title" style="font-size:12px">Sniperking left</div><div class="ai-detail">8m ago</div></div></div>
+            <div class="ai event" style="animation:none"><div class="ai-icon">→</div><div class="ai-body"><div class="ai-title" style="font-size:12px">NakedNoob joined</div><div class="ai-detail">12m ago</div></div></div>
+            <div class="ai event" style="animation:none"><div class="ai-icon">→</div><div class="ai-body"><div class="ai-title" style="font-size:12px">RustLegend joined</div><div class="ai-detail">15m ago</div></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">🌙</span>In-Game Time</div></div>
+          <div style="display:flex;gap:16px;align-items:center">
+            <div style="text-align:center">
+              <div style="font-size:40px" id="timeEmoji">☀️</div>
+              <div style="font-family:var(--cond);font-size:28px;font-weight:700;color:var(--amber)" id="gameTimeDisp">14:32</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3)" id="dayNightInfo">Day · Night in ~2h 14m</div>
+            </div>
+            <div style="flex:1">
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:6px">TIME OF DAY</div>
+              <div class="pbar" style="height:8px"><div class="pbar-fill a" id="dayPbar" style="width:60%"></div></div>
+              <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px"><span>00:00</span><span>Dawn</span><span>Dusk</span><span>24:00</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">📊</span>Server Stats</div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="background:var(--bg3);padding:10px;border-radius:4px"><div style="font-family:var(--mono);font-size:9px;color:var(--text3)">PEAK TODAY</div><div style="font-family:var(--cond);font-size:22px;font-weight:700;color:var(--cyan)">189</div></div>
+            <div style="background:var(--bg3);padding:10px;border-radius:4px"><div style="font-family:var(--mono);font-size:9px;color:var(--text3)">AVG ONLINE</div><div style="font-family:var(--cond);font-size:22px;font-weight:700;color:var(--cyan)">134</div></div>
+            <div style="background:var(--bg3);padding:10px;border-radius:4px"><div style="font-family:var(--mono);font-size:9px;color:var(--text3)">JOINED 30M</div><div style="font-family:var(--cond);font-size:22px;font-weight:700;color:var(--green)">+18</div></div>
+            <div style="background:var(--bg3);padding:10px;border-radius:4px"><div style="font-family:var(--mono);font-size:9px;color:var(--text3)">LEFT 30M</div><div style="font-family:var(--cond);font-size:22px;font-weight:700;color:var(--rust)">-5</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ DISCORD CHANNEL SETUP ══════ -->
+    <div class="panel" id="panel-discord-channels">
+      <div class="sec-title" style="margin-bottom:4px">Channel Setup</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:18px">Assign Discord channel IDs for each type of notification. Right-click a channel → Copy ID in Discord.</div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">📢</span>Alert Channels</div></div>
+          <div class="form-group"><label class="lbl">🚨 Raid Alerts Channel ID</label><div class="ch-pick-wrap"><span class="ch-pick-icon">#</span><input class="inp" id="ch-raids" placeholder="123456789012345678"></div></div>
+          <div class="form-group"><label class="lbl">🔔 Smart Alarm Alerts Channel ID</label><div class="ch-pick-wrap"><span class="ch-pick-icon">#</span><input class="inp" id="ch-alarms" placeholder="123456789012345678"></div></div>
+          <div class="form-group"><label class="lbl">💀 Team Death Alerts Channel ID</label><div class="ch-pick-wrap"><span class="ch-pick-icon">#</span><input class="inp" id="ch-deaths" placeholder="123456789012345678"></div></div>
+          <div class="form-group"><label class="lbl">🚁 Server Events Channel ID</label><div class="ch-pick-wrap"><span class="ch-pick-icon">#</span><input class="inp" id="ch-events" placeholder="123456789012345678"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">💬</span>Chat & Control Channels</div></div>
+          <div class="form-group"><label class="lbl">💬 Team Chat Relay Channel ID</label><div class="ch-pick-wrap"><span class="ch-pick-icon">#</span><input class="inp" id="ch-teamchat" placeholder="123456789012345678"></div></div>
+          <div class="form-group"><label class="lbl">🎛 Switch Control Panel Channel ID</label><div class="ch-pick-wrap"><span class="ch-pick-icon">#</span><input class="inp" id="ch-switches" placeholder="123456789012345678"></div></div>
+          <div class="form-group"><label class="lbl">📊 General Bot Log Channel ID</label><div class="ch-pick-wrap"><span class="ch-pick-icon">#</span><input class="inp" id="ch-log" placeholder="123456789012345678"></div></div>
+          <div class="form-group"><label class="lbl">📅 Wipe Reminders Channel ID</label><div class="ch-pick-wrap"><span class="ch-pick-icon">#</span><input class="inp" id="ch-wipe" placeholder="123456789012345678"></div></div>
+        </div>
+        <div class="card" style="grid-column:1/-1">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">🔔</span>Alert Enable / Disable</div></div>
+          <div class="grid2" style="gap:0">
+            <div>
+              <div class="sr"><div class="sr-info"><div class="sr-name">💥 Raid Alerts</div><div class="sr-desc">Explosions near your base</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+              <div class="sr"><div class="sr-info"><div class="sr-name">🔔 Smart Alarm Alerts</div><div class="sr-desc">When alarms trigger</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+              <div class="sr"><div class="sr-info"><div class="sr-name">💀 Team Deaths</div><div class="sr-desc">With grid location</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+              <div class="sr"><div class="sr-info"><div class="sr-name">💬 Team Chat Relay</div><div class="sr-desc">All team messages</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            </div>
+            <div>
+              <div class="sr"><div class="sr-info"><div class="sr-name">🚁 Patrol Helicopter</div><div class="sr-desc">Spawn and destroy events</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+              <div class="sr"><div class="sr-info"><div class="sr-name">🚢 Cargo Ship</div><div class="sr-desc">Spawn and depart events</div></div><label class="tog"><input type="checkbox"><div class="tog-sl"></div></label></div>
+              <div class="sr"><div class="sr-info"><div class="sr-name">📅 Wipe Reminders</div><div class="sr-desc">24h and 1h before wipe</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+              <div class="sr"><div class="sr-info"><div class="sr-name">👥 Teammate Online/Offline</div><div class="sr-desc">When team members join</div></div><label class="tog"><input type="checkbox"><div class="tog-sl"></div></label></div>
+            </div>
+          </div>
+          <button class="btn btn-rust" style="margin-top:16px" onclick="saveSettings()">💾 Save Channel Config</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ ROLE ALERTS ══════ -->
+    <div class="panel" id="panel-discord-roles">
+      <div class="sec-title" style="margin-bottom:4px">Role Alert Configuration</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:18px">Set keywords and conditions that trigger @role pings in Discord. Roles are pinged in the matching alert channel.</div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">🚨</span>Alert Type → Role Pings</div><button class="btn btn-rust btn-sm" onclick="openModal('modal-role')">＋ Add</button></div>
+          <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)">
+            <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;padding:0 4px;margin-bottom:6px">
+              <span>Alert Type / Keyword</span><span>@ Role to Ping</span><span>On/Off</span>
+            </div>
+            <div id="roleRows" style="display:flex;flex-direction:column;gap:6px"></div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="openModal('modal-role')">＋ Add Role Rule</button>
+        </div>
+
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">💡</span>How It Works</div></div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.9">
+              <div>• Set a <span style="color:var(--amber)">keyword</span> like <code style="color:var(--rust)">RAID</code>, <code style="color:var(--rust)">ALARM</code>, or any custom word</div>
+              <div>• Choose which <span style="color:var(--blue)">Discord Role</span> to @mention</div>
+              <div>• When that alert fires, the bot pings the role in the correct channel</div>
+              <div style="margin-top:8px;color:var(--text3)">Examples:</div>
+              <div>• <code style="color:var(--cyan)">RAID</code> → @Raiders</div>
+              <div>• <code style="color:var(--cyan)">ALARM</code> → @Defence</div>
+              <div>• <code style="color:var(--cyan)">HELI</code> → @Everyone</div>
+              <div>• <code style="color:var(--cyan)">CARGO</code> → @Farmers</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">📌</span>@mention on Death</div></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Ping team on teammate death</div><div class="sr-desc">Notify the team when a member dies</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Include grid location in ping</div><div class="sr-desc">Shows where they died on the map</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="form-group" style="margin-top:10px">
+              <label class="lbl">Death Alert Role ID</label>
+              <input class="inp" id="deathRoleId" placeholder="Discord Role ID">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ VOICE ALERTS ══════ -->
+    <div class="panel" id="panel-discord-voice">
+      <div class="sec-title" style="margin-bottom:4px">Voice Channel Alerts</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:18px">The Discord bot joins a voice channel and reads out smart alarm alerts using text-to-speech (TTS).</div>
+
+      <div class="grid2">
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">🔊</span>Voice Channel Config</div></div>
+            <div class="form-group"><label class="lbl">Voice Channel ID</label><input class="inp" id="voiceChannelId" placeholder="Discord Voice Channel ID"><div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px">Right-click your voice channel in Discord → Copy ID</div></div>
+            <div class="form-group"><label class="lbl">TTS Voice Style</label>
+              <select class="inp" id="ttsVoice">
+                <option value="default">Default (System TTS)</option>
+                <option value="uk-male">UK Male</option>
+                <option value="us-female">US Female</option>
+                <option value="robot">Robotic (eSpeak)</option>
+                <option value="military">Military / Tactical</option>
+              </select>
+            </div>
+            <div class="form-group"><label class="lbl">TTS Volume (0-100)</label><input class="inp" type="number" id="ttsVol" value="80" min="0" max="100"></div>
+            <div class="form-group"><label class="lbl">Alert Message Template</label><textarea class="inp" id="ttsMsgTemplate" style="min-height:60px">WARNING! {alarm_name} has been triggered at grid {grid}!</textarea><div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px">Variables: {alarm_name} {grid} {time} {server}</div></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Auto-join on raid alert</div><div class="sr-desc">Bot joins voice when a raid is detected</div></div><label class="tog"><input type="checkbox" checked id="voiceAutoJoin"><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Auto-leave after alert</div><div class="sr-desc">Leave voice channel 30s after speaking</div></div><label class="tog"><input type="checkbox" checked id="voiceAutoLeave"><div class="tog-sl"></div></label></div>
+            <div class="btns" style="margin-top:14px">
+              <button class="btn btn-blue" onclick="joinVoice()">🔊 Join Voice Now</button>
+              <button class="btn btn-ghost" onclick="testTTS()">🔈 Test TTS</button>
+              <button class="btn btn-ghost btn-sm" onclick="leaveVoice()">Leave</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">🔔</span>Per-Alarm Voice Settings</div></div>
+            <div id="almVoiceList" style="display:flex;flex-direction:column;gap:10px"></div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">⚙</span>Voice Trigger Rules</div></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">🚨 Read out Raid Alerts</div><div class="sr-desc">Announce explosions via TTS</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">🔔 Read out Alarm triggers</div><div class="sr-desc">Each smart alarm read aloud</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">💀 Announce teammate deaths</div><div class="sr-desc">Say who died and where</div></div><label class="tog"><input type="checkbox"><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">🚁 Announce server events</div><div class="sr-desc">Heli, cargo, CH47 spawns</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ DISCORD SWITCH PANEL ══════ -->
+    <div class="panel" id="panel-discord-switches">
+      <div class="sec-title" style="margin-bottom:4px">Discord Switch Control Panel</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:18px">The bot posts a live panel in your #switches channel. Any team member can click ON/OFF buttons to control switches from Discord.</div>
+      <div class="grid2">
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">⚙</span>Panel Settings</div></div>
+            <div class="form-group"><label class="lbl">Switch Panel Channel ID</label><div class="ch-pick-wrap"><span class="ch-pick-icon">#</span><input class="inp" placeholder="Channel where panel is posted" id="dcSwChannelId"></div></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Auto-update panel</div><div class="sr-desc">Refresh button states every 10s</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Show who toggled</div><div class="sr-desc">Log "X turned [switch] ON" in chat</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Allow all members</div><div class="sr-desc">Any member can toggle (not just admins)</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="form-group" style="margin-top:12px"><label class="lbl">Restrict to Role (optional)</label><input class="inp" placeholder="Role ID — blank = all members" id="dcSwRoleId"></div>
+            <button class="btn btn-blue" style="margin-top:8px" onclick="postSwitchPanel()">📤 Post Panel to Discord</button>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">🎛</span>Switches in Panel</div></div>
+            <div id="swPanelList" style="display:flex;flex-direction:column;gap:6px"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">👁</span>Panel Preview</div></div>
+          <div class="discord-preview">
+            <div class="dc-channel-name"># 🎛 switches</div>
+            <div class="dc-msg">
+              <div class="dc-avatar">🤖</div>
+              <div class="dc-body">
+                <div class="dc-name">RustLink <span class="dc-bot-tag">BOT</span></div>
+                <div style="font-family:var(--mono);font-size:10px;color:#8e9297;margin-top:2px">Today at 14:32</div>
+                <div class="dc-embed">
+                  <div class="dc-embed-title">⚡ Smart Switch Control Panel</div>
+                  <div class="dc-embed-desc" style="margin-bottom:12px">Click buttons to toggle switches in-game</div>
+                  <div id="dcPanelPreview"></div>
+                  <div style="font-family:var(--mono);font-size:9px;color:#8e9297;margin-top:10px">Last updated: just now · 2 switches ON</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ IN-GAME COMMANDS ══════ -->
+    <div class="panel" id="panel-ingame-cmds">
+      <div class="sec-title" style="margin-bottom:4px">In-Game Chat Commands</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:18px">Type these commands in in-game team chat. The bot reads the command and responds back into team chat automatically.</div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">💬</span>Available Commands</div></div>
+          <div class="cmd-row">
+            <span class="cmd-name">!pop</span>
+            <span class="cmd-desc">Current players online + queue + joined/left in last 30m</span>
+            <label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-name">!time</span>
+            <span class="cmd-desc">In-game time + how long until day/night</span>
+            <label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-name">!wipe</span>
+            <span class="cmd-desc">Countdown to next wipe</span>
+            <label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-name">!map</span>
+            <span class="cmd-desc">Post rustmaps.com link in team chat</span>
+            <label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-name">!team</span>
+            <span class="cmd-desc">Team members online/offline + HP + grid</span>
+            <label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-name">!events</span>
+            <span class="cmd-desc">Active events (heli, cargo, etc.)</span>
+            <label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-name">!sw [name]</span>
+            <span class="cmd-desc">Toggle a switch by name from in-game</span>
+            <label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-name">!switches</span>
+            <span class="cmd-desc">List all switches and their current state</span>
+            <label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-name">!alarms</span>
+            <span class="cmd-desc">List smart alarms and enabled/disabled</span>
+            <label class="tog"><input type="checkbox"><div class="tog-sl"></div></label>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-name">!ping</span>
+            <span class="cmd-desc">Bot latency and connection status</span>
+            <label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">⚙</span>Command Settings</div></div>
+            <div class="form-group"><label class="lbl">Command Prefix</label><input class="inp" value="!" id="cmdPrefix" style="max-width:80px;display:inline-block"><span style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-left:10px">e.g. !pop, !time</span></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Only team can trigger commands</div><div class="sr-desc">Ignore non-team chat commands</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Log commands to Discord</div><div class="sr-desc">Post command uses to bot log channel</div></div><label class="tog"><input type="checkbox"><div class="tog-sl"></div></label></div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">📋</span>Example Responses</div></div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="background:var(--bg3);border-radius:4px;padding:10px 12px;border:1px solid var(--border)">
+                <div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:6px">!pop response:</div>
+                <div style="font-family:var(--mono);font-size:11px;color:var(--text)">📊 Players: <span style="color:var(--green)">142/200</span> | Queue: 8<br>Last 30m: <span style="color:var(--green)">+18 joined</span> · <span style="color:var(--rust)">-5 left</span></div>
+              </div>
+              <div style="background:var(--bg3);border-radius:4px;padding:10px 12px;border:1px solid var(--border)">
+                <div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:6px">!time response:</div>
+                <div style="font-family:var(--mono);font-size:11px;color:var(--text)">☀️ In-game: <span style="color:var(--amber)">14:32</span> | Day<br>🌙 Night in: <span style="color:var(--cyan)">2h 14m</span></div>
+              </div>
+              <div style="background:var(--bg3);border-radius:4px;padding:10px 12px;border:1px solid var(--border)">
+                <div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:6px">!team response:</div>
+                <div style="font-family:var(--mono);font-size:11px;color:var(--text)">👥 YourName <span style="color:var(--green)">●</span> F5 500HP<br>👥 xXSlayer <span style="color:var(--green)">●</span> E7 320HP<br>👥 BuilderBob <span style="color:var(--text3)">○</span> offline</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ SETTINGS ══════ -->
+    <div class="panel" id="panel-settings">
+      <div class="sec-title" style="margin-bottom:16px">Settings</div>
+      <div class="grid2">
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">🔗</span>Rust Server</div></div>
+            <div class="form-group"><label class="lbl">Server IP</label><input class="inp" id="cfg-ip" placeholder="0.0.0.0"></div>
+            <div class="inp-row">
+              <div class="form-group"><label class="lbl">App Port</label><input class="inp" id="cfg-port" value="28082"></div>
+              <div class="form-group"><label class="lbl">Steam ID</label><input class="inp" id="cfg-steam" placeholder="76561198..."></div>
+            </div>
+            <div class="form-group"><label class="lbl">Player Token</label><input class="inp" type="password" id="cfg-token" placeholder="From Rust+ app"></div>
+            <div class="form-group"><label class="lbl">Wipe Date/Time</label><input class="inp" type="datetime-local" id="cfg-wipe"></div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">🤖</span>Discord Bot</div></div>
+            <div class="form-group"><label class="lbl">Bot Token</label><input class="inp" type="password" id="cfg-bottoken" placeholder="Discord bot token"></div>
+            <div class="inp-row">
+              <div class="form-group"><label class="lbl">Client ID</label><input class="inp" id="cfg-clientid" placeholder="App ID"></div>
+              <div class="form-group"><label class="lbl">Guild ID</label><input class="inp" id="cfg-guildid" placeholder="Server ID"></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">🔔</span>Notifications</div></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Browser Notifications</div><div class="sr-desc">Popup alerts in this dashboard</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Sound Alerts</div><div class="sr-desc">Play sound on raid alerts</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Auto Reconnect</div><div class="sr-desc">Reconnect on drop</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Deaths in team chat</div><div class="sr-desc">Bot says death in team chat + grid</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+            <div class="sr"><div class="sr-info"><div class="sr-name">Alarms in team chat</div><div class="sr-desc">Bot announces alarms in team chat</div></div><label class="tog"><input type="checkbox" checked><div class="tog-sl"></div></label></div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title"><span class="ct-icon">📤</span>Export/Import Config</div></div>
+            <div class="btns">
+              <button class="btn btn-ghost btn-sm" onclick="exportConfig()">📤 Export .env</button>
+              <button class="btn btn-ghost btn-sm" onclick="showToast('info','📥','Import','Paste your .env content below')">📥 Import</button>
+            </div>
+            <textarea class="inp" id="envOutput" style="margin-top:12px;min-height:120px;font-size:10px;line-height:1.6" readonly placeholder="Click Export to generate your .env file…"></textarea>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-rust" onclick="saveSettings()">💾 Save All Settings</button>
+    </div>
+
+    <!-- ══════ CONNECTION ══════ -->
+    <div class="panel" id="panel-connect">
+      <div class="sec-title" style="margin-bottom:4px">Server Connection <span class="saved-badge" id="connSavedBadge">✓ Saved</span></div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:18px">Your server details are saved in your browser. Teammates only see the server name — Steam ID and token are hidden.</div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd">
+            <div class="card-title"><span class="ct-icon">🔗</span>Server Details</div>
+            <div id="savedServerTag" style="display:none;font-family:var(--mono);font-size:9px;padding:2px 7px;background:rgba(61,220,132,.1);border:1px solid rgba(61,220,132,.25);border-radius:3px;color:var(--green);">✓ SAVED</div>
+          </div>
+
+          <div class="form-group">
+            <label class="lbl">Server IP</label>
+            <input class="inp" id="conn-ip" placeholder="185.56.83.122" oninput="markUnsaved()">
+          </div>
+          <div class="inp-row">
+            <div class="form-group">
+              <label class="lbl">App Port</label>
+              <input class="inp" id="conn-port" value="28082" oninput="markUnsaved()">
+            </div>
+            <div class="form-group">
+              <label class="lbl">Server Name (display only)</label>
+              <input class="inp" id="conn-servername" placeholder="e.g. Rustafied US Main" oninput="markUnsaved()">
+            </div>
+          </div>
+
+          <!-- Steam ID — hidden from teammates -->
+          <div class="form-group">
+            <label class="lbl">Steam ID (64-bit) <span class="lbl-hint">— hidden from team</span></label>
+            <div class="steam-hidden" id="steamIdDisplay">
+              <span class="sh-val" id="steamIdMasked">Not set</span>
+              <span class="steam-reveal-btn" onclick="toggleSteamReveal('steam')">reveal</span>
+            </div>
+            <input class="inp" type="password" id="conn-steam" placeholder="76561198..." style="display:none;margin-top:4px;" oninput="markUnsaved()">
+          </div>
+
+          <!-- Token — always hidden -->
+          <div class="form-group">
+            <label class="lbl">Player Token <span class="lbl-hint">— hidden from team</span></label>
+            <div class="steam-hidden" id="tokenDisplay">
+              <span class="sh-val" id="tokenMasked">Not set</span>
+              <span class="steam-reveal-btn" onclick="toggleSteamReveal('token')">reveal</span>
+            </div>
+            <input class="inp" type="password" id="conn-token" placeholder="From Rust+ app" style="display:none;margin-top:4px;" oninput="markUnsaved()">
+          </div>
+
+          <div class="btns" style="margin-bottom:12px;">
+            <button class="btn btn-rust" onclick="connectServer()">⚡ Connect</button>
+            <button class="btn btn-ghost" onclick="disconnectServer()">Disconnect</button>
+            <button class="btn btn-green btn-sm" onclick="saveConnConfig()">💾 Save</button>
+          </div>
+
+          <div style="padding:12px;background:var(--bg3);border-radius:4px;border:1px solid var(--border)">
+            <div style="font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--text3);margin-bottom:8px">CONNECTION LOG</div>
+            <div id="connLog" style="font-family:var(--mono);font-size:10px;color:var(--text2);line-height:1.8">Waiting for connection…</div>
+          </div>
+
+          <div style="margin-top:12px;padding:10px 12px;background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:4px;">
+            <div style="font-family:var(--mono);font-size:9px;color:var(--amber);margin-bottom:4px;">🔒 PRIVACY NOTE</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);line-height:1.6;">Your Steam ID and Player Token are stored only in <em>your</em> browser's local storage. Teammates who log in with the passcode cannot see this page's sensitive fields — they are masked by default. Never share your token publicly.</div>
+          </div>
+
+          <div style="margin-top:12px;padding:12px;background:var(--bg3);border-radius:4px;border:1px solid var(--border);">
+            <div style="font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--text3);margin-bottom:10px;">🔌 LIVE DASHBOARD — RAILWAY URL</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text2);margin-bottom:10px;line-height:1.6;">Enter your Railway deployment URL so the dashboard connects live to your bot via WebSocket. Use the <strong>wss://</strong> URL (or paste your https:// Railway URL — it will be converted automatically).</div>
+            <div style="display:flex;gap:8px;">
+              <input class="inp" id="ws-url-inp" placeholder="https://your-app.up.railway.app" style="flex:1;" oninput="showWsUrlHint(this)">
+              <button class="btn btn-rust btn-sm" onclick="saveWsUrl()">Connect</button>
+            </div>
+            <div id="ws-url-hint" style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:6px;"></div>
+            <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
+              <div class="conn-dot off" id="wsDot" style="width:8px;height:8px;"></div>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--text2);" id="wsStatusText">Not connected</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title"><span class="ct-icon">📘</span>Getting Your Token</div></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);font-size:10px;color:var(--rust);background:rgba(206,66,43,.1);border:1px solid var(--border-rust);border-radius:3px;padding:2px 7px;flex-shrink:0">01</span><span style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.6">Install <strong style="color:var(--text)">Rust+</strong> app on your phone. Log in with the same Steam account you play on.</span></div>
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);font-size:10px;color:var(--rust);background:rgba(206,66,43,.1);border:1px solid var(--border-rust);border-radius:3px;padding:2px 7px;flex-shrink:0">02</span><span style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.6">In-game: <strong style="color:var(--text)">Escape → Rust+ → Pair with Server</strong>. Make sure the Rust+ app is open.</span></div>
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);font-size:10px;color:var(--rust);background:rgba(206,66,43,.1);border:1px solid var(--border-rust);border-radius:3px;padding:2px 7px;flex-shrink:0">03</span><span style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.6">Run the FCM token grabber:<br><code style="color:var(--cyan)">npx @liamcottle/rustplus.js-fcm-listener</code></span></div>
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);font-size:10px;color:var(--rust);background:rgba(206,66,43,.1);border:1px solid var(--border-rust);border-radius:3px;padding:2px 7px;flex-shrink:0">04</span><span style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.6">Paste the <strong style="color:var(--text)">playerToken</strong> and <strong style="color:var(--text)">steamId</strong> above then hit <strong style="color:var(--green)">Save</strong>.</span></div>
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);font-size:10px;color:var(--rust);background:rgba(206,66,43,.1);border:1px solid var(--border-rust);border-radius:3px;padding:2px 7px;flex-shrink:0">05</span><span style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.6">Hit <strong style="color:var(--green)">Connect</strong>. The bot monitors and posts to Discord automatically.</span></div>
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0"><span style="font-family:var(--mono);font-size:10px;color:var(--rust);background:rgba(206,66,43,.1);border:1px solid var(--border-rust);border-radius:3px;padding:2px 7px;flex-shrink:0">06</span><span style="font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.6">Share the <strong style="color:var(--amber)">passcode</strong> with your team — they log in and can use switches, view alerts, and chat without seeing your credentials.</span></div>
+          </div>
+
+          <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
+            <div style="font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--text3);text-transform:uppercase;margin-bottom:10px;">🔑 Access Code Settings</div>
+            <div class="inp-row">
+              <div class="form-group">
+                <label class="lbl">Current Passcode</label>
+                <input class="inp" type="password" id="cfg-passcode" placeholder="4-digit code" maxlength="4" value="">
+                <div style="font-family:var(--mono);font-size:9px;color:var(--text3);margin-top:4px;">Default: 5656 — change it here</div>
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;">
+                <button class="btn btn-rust btn-sm" onclick="savePasscode()" style="width:100%;">Save Code</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ RAID NOTES ══════ -->
+    <div class="panel" id="panel-raid-notes">
+      <div class="sec-hd" style="margin-bottom:6px">
+        <div class="sec-title">📋 Raid Notes</div>
+        <div style="display:flex;gap:8px;">
+          <select class="inp" id="notes-filter" style="width:140px;padding:5px 8px;font-size:11px;" onchange="renderNotes()">
+            <option value="all">All Notes</option>
+            <option value="pinned">📌 Pinned</option>
+            <option value="raid">🔥 Raid</option>
+            <option value="intel">🔵 Intel</option>
+            <option value="loot">🟢 Loot</option>
+            <option value="warning">⚠ Warning</option>
+            <option value="plan">🗺 Plan</option>
+          </select>
+          <button class="btn btn-rust" onclick="openModal('modal-note')">＋ Add Note</button>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:18px;">Shared raid intel for the whole team. Pin important notes to keep them at the top.</div>
+
+      <!-- Pinned strip -->
+      <div id="pinned-strip" style="margin-bottom:16px;"></div>
+
+      <!-- Main notes grid -->
+      <div class="notes-grid" id="notes-grid"></div>
+    </div>
+
+  </div><!-- /content -->
+</main>
+
+<!-- ══════ MODALS ══════ -->
+<!-- Add Switch -->
+<div class="modal-ov" id="modal-sw">
+  <div class="modal">
+    <div class="modal-title">＋ Add Smart Switch</div>
+    <div class="inp-row">
+      <div class="form-group"><label class="lbl">Name</label><input class="inp" id="sw-name" placeholder="Auto Turrets"></div>
+      <div class="form-group"><label class="lbl">Entity ID</label><input class="inp" id="sw-eid" placeholder="100023"></div>
+    </div>
+    <div class="inp-row">
+      <div class="form-group"><label class="lbl">Icon</label>
+        <select class="inp" id="sw-icon">
+          <option value="⚡">⚡ Power</option><option value="🔦">🔦 Lights</option>
+          <option value="🏹">🏹 Turret</option><option value="🚪">🚪 Door</option>
+          <option value="🔥">🔥 Flame Turret</option><option value="🔌">🔌 Other</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="lbl">Show in Discord Panel?</label>
+        <select class="inp" id="sw-dc"><option value="1">Yes</option><option value="0">No</option></select>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('modal-sw')">Cancel</button><button class="btn btn-rust" onclick="addSwitch()">Add Switch</button></div>
+  </div>
+</div>
+
+<!-- Add Alarm -->
+<div class="modal-ov" id="modal-alm">
+  <div class="modal">
+    <div class="modal-title">＋ Add Smart Alarm</div>
+    <div class="inp-row">
+      <div class="form-group"><label class="lbl">Alarm Name</label><input class="inp" id="alm-name" placeholder="Base Perimeter"></div>
+      <div class="form-group"><label class="lbl">Entity ID</label><input class="inp" id="alm-eid" placeholder="200011"></div>
+    </div>
+    <div class="form-group"><label class="lbl">Note / Description</label><input class="inp" id="alm-note" placeholder="What this alarm monitors"></div>
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:6px">
+      <div style="font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text3);text-transform:uppercase;margin-bottom:10px">Alert Actions for This Alarm</div>
+      <div class="sr"><div class="sr-info"><div class="sr-name">Post to Discord</div></div><label class="tog"><input type="checkbox" checked id="alm-dc"><div class="tog-sl"></div></label></div>
+      <div class="sr"><div class="sr-info"><div class="sr-name">🔊 Read out in Voice Channel</div></div><label class="tog"><input type="checkbox" checked id="alm-voice"><div class="tog-sl"></div></label></div>
+      <div class="sr"><div class="sr-info"><div class="sr-name">💬 Announce in In-Game Team Chat</div></div><label class="tog"><input type="checkbox" checked id="alm-teamchat"><div class="tog-sl"></div></label></div>
+      <div class="sr"><div class="sr-info"><div class="sr-name">@ Ping Role on Trigger</div></div><label class="tog"><input type="checkbox" id="alm-pingrole"><div class="tog-sl"></div></label></div>
+      <div class="form-group" style="margin-top:10px"><label class="lbl">Role ID to Ping (optional)</label><input class="inp" id="alm-roleid" placeholder="Discord Role ID"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('modal-alm')">Cancel</button><button class="btn btn-rust" onclick="addAlarm()">Add Alarm</button></div>
+  </div>
+</div>
+
+<!-- Add Role Rule -->
+<div class="modal-ov" id="modal-role">
+  <div class="modal">
+    <div class="modal-title">＋ Add Role Alert Rule</div>
+    <div class="form-group"><label class="lbl">Alert Type / Keyword<span class="lbl-hint">e.g. RAID, ALARM, HELI, CARGO, DEATH, or any word</span></label><input class="inp" id="rr-kw" placeholder="RAID"></div>
+    <div class="form-group"><label class="lbl">Discord Role ID to @Ping</label><input class="inp" id="rr-role" placeholder="Discord Role ID"></div>
+    <div class="form-group"><label class="lbl">Optional: Override Channel ID</label><input class="inp" id="rr-ch" placeholder="Leave blank to use default alert channel"></div>
+    <div class="sr"><div class="sr-info"><div class="sr-name">Active</div></div><label class="tog"><input type="checkbox" checked id="rr-on"><div class="tog-sl"></div></label></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('modal-role')">Cancel</button><button class="btn btn-rust" onclick="addRoleRule()">Add Rule</button></div>
+  </div>
+</div>
+
+<!-- Admin Code Modal -->
+<div class="modal-ov" id="modal-admin">
+  <div class="modal" style="max-width:340px;text-align:center;">
+    <div class="modal-title" style="text-align:left;">⚙ Enter Admin Code</div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:18px;text-align:left;">Admin mode unlocks Discord setup, bot config, connection settings and all system options.</div>
+    <div style="display:flex;justify-content:center;gap:12px;margin-bottom:16px;" id="adminDots">
+      <div class="lock-dot" id="ad0"></div>
+      <div class="lock-dot" id="ad1"></div>
+      <div class="lock-dot" id="ad2"></div>
+      <div class="lock-dot" id="ad3"></div>
+    </div>
+    <div class="lock-pad" style="max-width:210px;margin:0 auto 12px;gap:8px;">
+      <div class="lock-key" style="padding:12px 6px;font-size:18px;" onclick="adminKey('1')">1</div>
+      <div class="lock-key" style="padding:12px 6px;font-size:18px;" onclick="adminKey('2')">2</div>
+      <div class="lock-key" style="padding:12px 6px;font-size:18px;" onclick="adminKey('3')">3</div>
+      <div class="lock-key" style="padding:12px 6px;font-size:18px;" onclick="adminKey('4')">4</div>
+      <div class="lock-key" style="padding:12px 6px;font-size:18px;" onclick="adminKey('5')">5</div>
+      <div class="lock-key" style="padding:12px 6px;font-size:18px;" onclick="adminKey('6')">6</div>
+      <div class="lock-key" style="padding:12px 6px;font-size:18px;" onclick="adminKey('7')">7</div>
+      <div class="lock-key" style="padding:12px 6px;font-size:18px;" onclick="adminKey('8')">8</div>
+      <div class="lock-key" style="padding:12px 6px;font-size:18px;" onclick="adminKey('9')">9</div>
+      <div class="lock-key del" style="padding:12px 6px;font-size:14px;" onclick="adminKeyDel()">⌫</div>
+      <div class="lock-key zero" style="padding:12px 6px;font-size:18px;" onclick="adminKey('0')">0</div>
+    </div>
+    <div class="lock-err" id="adminErr" style="margin-bottom:8px;"></div>
+    <div class="modal-foot" style="justify-content:center;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-admin');adminInput='';">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add / Edit Note Modal -->
+<div class="modal-ov" id="modal-note">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-title">📋 Add Raid Note</div>
+    <div class="inp-row">
+      <div class="form-group" style="flex:2;">
+        <label class="lbl">Title</label>
+        <input class="inp" id="note-title" placeholder="e.g. Raiding 2x2 at G7 tonight">
+      </div>
+      <div class="form-group">
+        <label class="lbl">Category</label>
+        <select class="inp" id="note-cat">
+          <option value="raid">🔥 Raid</option>
+          <option value="intel">🔵 Intel</option>
+          <option value="loot">🟢 Loot</option>
+          <option value="warning">⚠ Warning</option>
+          <option value="plan">🗺 Plan</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="lbl">Note Body</label>
+      <textarea class="inp" id="note-body" style="min-height:100px;" placeholder="Add details — location, grid, what you found, raid plan, enemy info..."></textarea>
+    </div>
+    <div class="inp-row">
+      <div class="form-group">
+        <label class="lbl">Author Name</label>
+        <input class="inp" id="note-author" placeholder="Your name" value="Damo Unknown">
+      </div>
+      <div class="form-group" style="display:flex;align-items:flex-end;gap:10px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+          <label class="tog"><input type="checkbox" id="note-pin"><div class="tog-sl"></div></label>
+          📌 Pin this note
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-note')">Cancel</button>
+      <button class="btn btn-rust" onclick="addNote()">Post Note</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+// ════════════ STATE ════════════
+const S = {
+  connected: false,
+  switches:  [],
+  alarms:    [],
+  alerts:    [],
+  team:      [],
+  roleRules: [],
+  voice:     { active: false, channel: '' },
+  filter:    'all',
+  mode:      'none',
+  // Live data from bot
+  serverName:    '—',
+  serverIp:      '—',
+  players:       0,
+  maxPlayers:    0,
+  mapSize:       '—',
+  seed:          '—',
+  gameTime:      '—',
+  botTag:        'Not connected',
+};
+
+// ════════════ WEBSOCKET CLIENT ════════════
+let ws = null;
+let wsReconnectTimer = null;
+let wsConnected = false;
+
+function getWsUrl() {
+  // Read saved Railway URL from localStorage, fall back to same host
+  const saved = localStorage.getItem('rl_ws_url');
+  if (saved) return saved;
+  // Auto-detect: if served from Railway, use wss://same-host
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}`;
+}
+
+function connectWS() {
+  const url = getWsUrl();
+  if (!url || url === 'wss://' || url === 'ws://') {
+    setWsStatus('no-url');
+    return;
+  }
+
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    console.error('[WS] Could not create socket:', e);
+    setWsStatus('error');
+    scheduleReconnect();
+    return;
+  }
+
+  setWsStatus('connecting');
+
+  ws.onopen = () => {
+    wsConnected = true;
+    clearTimeout(wsReconnectTimer);
+    setWsStatus('connected');
+    console.log('[WS] Connected to bot');
+    toast('🔗', 'Live Connection', 'Dashboard connected to bot — loading live data', 'success');
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      handleWsMessage(msg);
+    } catch (e) { console.error('[WS] Bad message', e); }
+  };
+
+  ws.onclose = () => {
+    wsConnected = false;
+    setWsStatus('disconnected');
+    scheduleReconnect();
+  };
+
+  ws.onerror = () => {
+    wsConnected = false;
+    setWsStatus('error');
+  };
+}
+
+function scheduleReconnect() {
+  clearTimeout(wsReconnectTimer);
+  wsReconnectTimer = setTimeout(() => {
+    if (!wsConnected) connectWS();
+  }, 5000);
+}
+
+function setWsStatus(status) {
+  const dot   = document.getElementById('connDot');
+  const name  = document.getElementById('connName');
+  const addr  = document.getElementById('connAddr');
+  const chip  = document.getElementById('chip-conn');
+
+  switch (status) {
+    case 'connected':
+      if (dot)  dot.className  = 'conn-dot on';
+      if (chip) { chip.textContent = '◉ Live'; chip.className = 'chip green'; }
+      break;
+    case 'connecting':
+      if (dot)  dot.className  = 'conn-dot connecting';
+      if (chip) { chip.textContent = '◌ Connecting…'; chip.className = 'chip amber'; }
+      break;
+    case 'disconnected':
+    case 'error':
+      if (dot)  dot.className  = 'conn-dot off';
+      if (name) name.textContent = 'Bot Disconnected';
+      if (addr) addr.textContent = 'Reconnecting…';
+      if (chip) { chip.textContent = '◉ Offline'; chip.className = 'chip rust'; }
+      break;
+    case 'no-url':
+      if (dot)  dot.className  = 'conn-dot off';
+      if (name) name.textContent = 'Not configured';
+      if (addr) addr.textContent = 'Set Railway URL below';
+      if (chip) { chip.textContent = '◉ No URL'; chip.className = 'chip rust'; }
+      break;
+  }
+}
+
+// Handle messages FROM the bot
+function handleWsMessage(msg) {
+  switch (msg.type) {
+
+    case 'fullState':
+    case 'stateUpdate':
+      applyLiveState(msg.data);
+      break;
+
+    case 'alert':
+      addAlert(msg.data);
+      break;
+
+    case 'chatMessage':
+      addLiveChatMsg(msg.data);
+      break;
+
+    case 'switchToggled':
+      applySwitchToggle(msg.entityId, msg.value);
+      break;
+
+    case 'botReady':
+      document.getElementById('botName').textContent  = msg.tag || 'RustLink Bot';
+      document.getElementById('botStatus').textContent = '● Online';
+      document.getElementById('botStatus').className  = 'bot-st on';
+      document.getElementById('chip-bot').textContent  = '🤖 Bot Online';
+      document.getElementById('chip-bot').className    = 'chip green';
+      break;
+
+    case 'error':
+      toast('❌', 'Bot Error', msg.message, 'warn');
+      break;
+  }
+}
+
+// Apply a full state snapshot from the bot
+function applyLiveState(data) {
+  if (!data) return;
+
+  // Server info
+  S.serverName  = data.serverName  || '—';
+  S.serverIp    = data.serverIp    || '—';
+  S.players     = data.players     || 0;
+  S.maxPlayers  = data.maxPlayers  || 0;
+  S.mapSize     = data.mapSize     || '—';
+  S.seed        = data.seed        || '—';
+  S.gameTime    = data.gameTime    || '—';
+  S.connected   = data.connected   || false;
+  S.botTag      = data.botTag      || 'Online';
+
+  // Update sidebar server name
+  const nameEl = document.getElementById('connName');
+  const addrEl = document.getElementById('connAddr');
+  if (nameEl) nameEl.textContent = S.serverName;
+  if (addrEl) addrEl.textContent = S.serverIp + ':' + (data.serverPort || '28082');
+
+  // Bot tag
+  if (data.botTag) {
+    const bn = document.getElementById('botName');
+    const bs = document.getElementById('botStatus');
+    if (bn) bn.textContent = data.botTag;
+    if (bs) { bs.textContent = '● Online'; bs.className = 'bot-st on'; }
+    document.getElementById('chip-bot').textContent = '🤖 Bot Online';
+    document.getElementById('chip-bot').className   = 'chip green';
+  }
+
+  // Switches
+  if (data.switches && data.switches.length > 0) {
+    S.switches = data.switches.map(sw => ({
+      id: sw.id, name: sw.name, icon: sw.icon || '⚡',
+      on: sw.on, eid: sw.id, inPanel: sw.inPanel
+    }));
+    renderSwitches();
+    renderSwPanelList();
+    renderDcSwPreview();
+  }
+
+  // Alarms
+  if (data.alarms && data.alarms.length > 0) {
+    S.alarms = data.alarms.map(a => ({
+      id: a.id, name: a.name, icon: '🔔', enabled: true,
+      eid: a.id, note: '', voice: a.voice, teamChat: a.teamChat, discord: true, roleId: ''
+    }));
+    renderAlarms();
+  }
+
+  // Team
+  if (data.team) {
+    S.team = data.team.map(m => ({
+      name: m.name, online: m.online, hp: m.hp, grid: m.grid, avatar: '🧑'
+    }));
+    renderTeam();
+  }
+
+  // Alerts
+  if (data.alerts && data.alerts.length > 0) {
+    // Merge — don't duplicate
+    const existingIds = new Set(S.alerts.map(a => a.time));
+    data.alerts.forEach(a => {
+      if (!existingIds.has(a.time)) {
+        S.alerts.push({ ...a, time: formatTime(a.time) });
+      }
+    });
+    S.alerts.sort((a,b) => b._ts - a._ts);
+    renderAlerts();
+  }
+
+  // Chat messages
+  if (data.chatMessages && data.chatMessages.length > 0) {
+    chatMessages.length = 0;
+    data.chatMessages.forEach(m => {
+      chatMessages.push({ name: m.name, text: m.text, time: formatTime(m.time) });
+    });
+    renderChat();
+  }
+
+  // Pop stats on dashboard
+  updateDashStats(data);
+}
+
+function updateDashStats(data) {
+  // Player count
+  const popEl = document.querySelector('.stat-card.c .s-val');
+  if (popEl) popEl.textContent = data.players || 0;
+  const popSubEl = document.querySelector('.stat-card.c .s-sub');
+  if (popSubEl) popSubEl.textContent = `/ ${data.maxPlayers || 0} max`;
+
+  // Team online count
+  const teamEl = document.querySelector('.stat-card.b .s-val');
+  if (teamEl) {
+    const online = (data.team||[]).filter(m=>m.online).length;
+    teamEl.textContent = `${online}/${(data.team||[]).length}`;
+  }
+
+  // Switches on count
+  updateSwitchStat();
+
+  // Pop 30m trend
+  const p30El = document.querySelector('.stat-card.g:nth-child(2) .s-val');
+  if (p30El && data.pop) p30El.textContent = `+${data.pop.joined30m||0}`;
+
+  // Server info card
+  const snEl = document.getElementById('srv-name');
+  const smEl = document.getElementById('srv-map');
+  const ssEl = document.getElementById('srv-seed');
+  if (snEl) snEl.textContent = data.serverName || '—';
+  if (smEl) smEl.textContent = data.mapSize || '—';
+  if (ssEl) ssEl.textContent = data.seed || '—';
+}
+
+function applySwitchToggle(entityId, value) {
+  const sw = S.switches.find(s => String(s.id) === String(entityId));
+  if (sw) {
+    sw.on = value;
+    const card = document.getElementById('swc-' + sw.id);
+    if (card) {
+      card.classList.toggle('on', value);
+      const status = card.querySelector('.sw-status');
+      if (status) { status.textContent = value ? '● ACTIVE' : '○ INACTIVE'; status.className = 'sw-status ' + (value ? 'on' : 'off'); }
+      const tog = card.querySelector('input[type=checkbox]');
+      if (tog) tog.checked = value;
+    }
+    updateSwitchStat();
+    renderDcSwPreview();
+  }
+}
+
+function addLiveChatMsg(data) {
+  chatMessages.unshift({ name: data.name, text: data.text, time: 'now' });
+  if (chatMessages.length > 50) chatMessages.pop();
+  renderChat();
+}
+
+function formatTime(ts) {
+  if (!ts) return '—';
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  return Math.floor(diff/3600) + 'h ago';
+}
+
+// Send a message TO the bot via WebSocket
+function wsSend(type, data) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type, ...data }));
+  } else {
+    toast('⚠️', 'Not Connected', 'WebSocket not connected to bot', 'warn');
+  }
+}
+
+// Save Railway URL and reconnect
+function saveWsUrl() {
+  const inp = document.getElementById('ws-url-inp');
+  const val = inp?.value?.trim();
+  if (!val) { toast('⚠️', 'URL required', 'Enter your Railway URL', 'warn'); return; }
+  const url = val.replace(/^https?:\/\//, 'wss://').replace(/\/$/, '');
+  localStorage.setItem('rl_ws_url', url);
+  if (ws) { ws.close(); ws = null; }
+  connectWS();
+  toast('🔗', 'Connecting…', url, 'info');
+}
+
+// ════════════ NAVIGATION ════════════
+function navTo(panel, el) {
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const p = document.getElementById('panel-'+panel);
+  if(p) p.classList.add('active');
+  if(el && el.classList) el.classList.add('active');
+  const titles = {dashboard:'Dashboard',switches:'Smart Switches',alarms:'Smart Alarms',alerts:'Alert Feed',team:'Team & Chat','raid-notes':'Raid Notes',map:'Map & Events',tracker:'Player Tracker','discord-channels':'Channel Setup','discord-roles':'Role Alerts','discord-voice':'Voice Alerts','discord-switches':'Discord Switch Panel','ingame-cmds':'In-Game Commands',settings:'Settings',connect:'Connection'};
+  document.getElementById('pageTitle').textContent = titles[panel]||panel;
+}
+
+// ════════════ SWITCHES ════════════
+function renderSwitches() {
+  const g = document.getElementById('swGrid');
+  g.innerHTML = S.switches.map(sw=>`
+    <div class="sw-card ${sw.on?'on':''}" id="swc-${sw.id}">
+      <div class="sw-top"><div class="sw-icon">${sw.icon}</div><label class="tog"><input type="checkbox" ${sw.on?'checked':''} onchange="toggleSw(${sw.id},this.checked)"><div class="tog-sl"></div></label></div>
+      <div class="sw-name">${sw.name}</div>
+      <div class="sw-status ${sw.on?'on':'off'}">${sw.on?'● ACTIVE':'○ INACTIVE'}</div>
+      <div class="sw-meta"><span>ID:${sw.eid}</span>${sw.inPanel?'<span style="color:var(--blue)">📤 Panel</span>':''}</div>
+    </div>`).join('');
+  updateSwitchStat();
+  renderDcSwPreview();
+  renderSwPanelList();
+}
+
+function toggleSw(id,on){
+  const sw=S.switches.find(s=>s.id===id);
+  if(!sw)return;
+  sw.on=on;
+  // Send to bot via WebSocket — this actually toggles the in-game switch
+  wsSend('toggleSwitch', { entityId: String(sw.eid||sw.id), value: on });
+  const c=document.getElementById('swc-'+id);
+  if(c){c.classList.toggle('on',on);c.querySelector('.sw-status').textContent=on?'● ACTIVE':'○ INACTIVE';c.querySelector('.sw-status').className='sw-status '+(on?'on':'off');}
+  updateSwitchStat(); renderDcSwPreview();
+  toast(on?'⚡':'⬛',sw.name,on?'Turned ON':'Turned OFF',on?'success':'info');
+}
+
+function allSwitches(on){S.switches.forEach(s=>s.on=on);renderSwitches();toast(on?'⚡':'⬛','All Switches',on?'All turned ON':'All turned OFF',on?'success':'info');}
+
+function addSwitch(){
+  const name=document.getElementById('sw-name').value.trim();
+  const eid=document.getElementById('sw-eid').value.trim();
+  const icon=document.getElementById('sw-icon').value;
+  const inPanel=document.getElementById('sw-dc').value==='1';
+  if(!name){toast('⚠️','Name Required','Enter a switch name','warn');return;}
+  S.switches.push({id:Date.now(),name,icon,on:false,eid:eid||'XXXXXX',inPanel});
+  renderSwitches();closeModal('modal-sw');
+  document.getElementById('sw-name').value='';document.getElementById('sw-eid').value='';
+  toast('✅','Switch Added',name+' added','success');
+  document.getElementById('sw-badge').textContent=S.switches.length;
+}
+
+function updateSwitchStat(){
+  const on=S.switches.filter(s=>s.on).length;
+  const el=document.getElementById('dash-sw');
+  if(el)el.textContent=on+'/'+S.switches.length;
+}
+
+function renderDcSwPreview(){
+  ['dcSwPreview','dcPanelPreview'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    el.innerHTML=S.switches.filter(s=>s.inPanel).map(sw=>`
+      <div class="dc-sw-row"><div class="dc-sw-name">${sw.icon} ${sw.name}</div><button class="dc-sw-btn ${sw.on?'on':'off'}" onclick="toggleSw(${sw.id},${!sw.on})">${sw.on?'ON':'OFF'}</button></div>`).join('');
+  });
+}
+
+function renderSwPanelList(){
+  const el=document.getElementById('swPanelList');
+  if(!el)return;
+  el.innerHTML=S.switches.map((sw,i)=>`
+    <div class="sr" style="padding:8px 0">
+      <div class="sr-info"><div class="sr-name" style="font-size:13px">${sw.icon} ${sw.name}</div><div class="sr-desc">ID: ${sw.eid}</div></div>
+      <label class="tog"><input type="checkbox" ${sw.inPanel?'checked':''} onchange="S.switches[${i}].inPanel=this.checked;renderDcSwPreview();renderSwPanelList()"><div class="tog-sl"></div></label>
+    </div>`).join('');
+}
+
+// ════════════ ALARMS ════════════
+function renderAlarms(){
+  const el=document.getElementById('almList');
+  if(!el)return;
+  el.innerHTML=S.alarms.map(a=>`
+    <div class="alm-card">
+      <div class="alm-icon">${a.icon}</div>
+      <div class="alm-body">
+        <div class="alm-name">${a.name} ${a.enabled?'<span class="badge on">ENABLED</span>':'<span class="badge off">DISABLED</span>'}</div>
+        <div class="alm-note">${a.note} · ID: ${a.eid}</div>
+        <div class="alm-meta">
+          ${a.voice?'<span class="alm-tag voice">🔊 Voice</span>':''}
+          ${a.teamChat?'<span class="alm-tag chat">💬 Team Chat</span>':''}
+          ${a.discord?'<span class="alm-tag discord">📢 Discord</span>':''}
+          ${a.roleId?'<span class="alm-tag ping">@ Role</span>':''}
+        </div>
+      </div>
+      <div class="alm-controls">
+        <label class="tog"><input type="checkbox" ${a.enabled?'checked':''} onchange="toggleAlarm(${a.id},this.checked)"><div class="tog-sl"></div></label>
+      </div>
+    </div>`).join('');
+  renderAlmVoiceList();
+}
+
+function toggleAlarm(id,on){const a=S.alarms.find(x=>x.id===id);if(a){a.enabled=on;renderAlarms();toast('🔔',a.name,on?'Alarm enabled':'Alarm disabled',on?'success':'info');}}
+
+function addAlarm(){
+  const name=document.getElementById('alm-name').value.trim();
+  const eid=document.getElementById('alm-eid').value.trim();
+  const note=document.getElementById('alm-note').value.trim();
+  if(!name){toast('⚠️','Name Required','','warn');return;}
+  S.alarms.push({id:Date.now(),name,icon:'🔔',enabled:true,eid:eid||'XXXXXX',note:note||'Smart alarm',voice:document.getElementById('alm-voice').checked,teamChat:document.getElementById('alm-teamchat').checked,discord:document.getElementById('alm-dc').checked,roleId:document.getElementById('alm-roleid').value.trim()});
+  renderAlarms();closeModal('modal-alm');
+  document.getElementById('alm-name').value='';document.getElementById('alm-eid').value='';document.getElementById('alm-note').value='';
+  toast('✅','Alarm Added',name,'success');
+  document.getElementById('alm-badge').textContent=S.alarms.length;
+}
+
+function renderAlmVoiceList(){
+  const el=document.getElementById('almVoiceList');
+  if(!el)return;
+  el.innerHTML=S.alarms.map((a,i)=>`
+    <div class="sr" style="padding:8px 0">
+      <div class="sr-info">
+        <div class="sr-name" style="font-size:13px">${a.icon} ${a.name}</div>
+        <div class="sr-desc">Read aloud in voice when triggered</div>
+      </div>
+      <label class="tog"><input type="checkbox" ${a.voice?'checked':''} onchange="S.alarms[${i}].voice=this.checked"><div class="tog-sl"></div></label>
+    </div>`).join('');
+}
+
+// ════════════ ALERTS ════════════
+function renderAlerts(){
+  const list=S.filter==='all'?S.alerts:S.alerts.filter(a=>a.type===S.filter);
+  const el=document.getElementById('alertFeed');
+  if(el)el.innerHTML=list.map(a=>`
+    <div class="ai ${a.type}">
+      <div class="ai-icon">${a.icon}</div>
+      <div class="ai-body"><div class="ai-title">${a.title}</div><div class="ai-detail">${a.detail}</div></div>
+      <div class="ai-time">${a.time}</div>
+    </div>`).join('')||'<div style="text-align:center;padding:30px;font-family:var(--mono);font-size:11px;color:var(--text3)">No alerts</div>';
+
+  // dash preview — top 4
+  const da=document.getElementById('dash-alerts');
+  if(da)da.innerHTML=S.alerts.slice(0,4).map(a=>`
+    <div class="ai ${a.type}">
+      <div class="ai-icon">${a.icon}</div>
+      <div class="ai-body"><div class="ai-title">${a.title}</div><div class="ai-detail">${a.detail}</div></div>
+      <div class="ai-time">${a.time}</div>
+    </div>`).join('');
+
+  // badge
+  const b=document.getElementById('alert-badge');
+  if(b)b.textContent=S.alerts.length;
+  const c=document.getElementById('chip-alerts');
+  if(c)c.textContent=S.alerts.length;
+}
+
+function filterAlerts(f,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');S.filter=f;renderAlerts();
+}
+function clearAlerts(){S.alerts=[];renderAlerts();toast('🗑','Cleared','Alert feed cleared','info');}
+
+function addAlert(a){
+  S.alerts.unshift({...a,time:'just now'});renderAlerts();
+  toast(a.icon,a.title,a.detail||'',a.type==='raid'?'raid':'info');
+}
+
+// ════════════ TEAM ════════════
+function renderTeam(){
+  const tbody=document.getElementById('teamTbody');
+  if(!tbody)return;
+  tbody.innerHTML=S.team.map(m=>`
+    <tr>
+      <td><span class="player-dot ${m.online?'on':'off'}"></span>${m.name}</td>
+      <td>${m.online?`<div style="font-size:12px">${m.hp}</div><div class="hp-bar"><div class="hp-fill" style="width:${m.hp/5}%"></div></div>`:'—'}</td>
+      <td><code style="font-size:11px;color:var(--text2)">${m.grid}</code></td>
+      <td><span class="badge ${m.online?'on':'off'}">${m.online?'ONLINE':'OFFLINE'}</span></td>
+    </tr>`).join('');
+
+  // deaths feed
+  const df=document.getElementById('deathFeed');
+  if(df)df.innerHTML='<div class="ai death"><div class="ai-icon">💀</div><div class="ai-body"><div class="ai-title">xXSlayer99 died</div><div class="ai-detail">Killed at Grid E7 by player RaidKing · 22m ago</div></div></div>';
+}
+
+// ════════════ TEAM CHAT ════════════
+const chatMessages=[
+  {name:'xXSlayer99',text:"They're raiding from the north!",time:'23m'},
+  {name:'YourUsername',text:"On my way, activating turrets",time:'22m'},
+  {name:'xXSlayer99',text:"Roofcampers too, bring the rifle",time:'21m'},
+];
+function renderChat(){
+  const el=document.getElementById('chatLog');
+  if(!el)return;
+  el.innerHTML=chatMessages.map(m=>`
+    <div class="chat-msg">
+      <span class="cm-time">${m.time}</span>
+      <div class="cm-name">${m.name}</div>
+      <div class="cm-text">${m.text}</div>
+    </div>`).join('');
+  el.scrollTop=el.scrollHeight;
+}
+function sendChat(){
+  const inp=document.getElementById('chatInp');
+  const txt=inp.value.trim();if(!txt)return;
+  // Send to bot → it sends to in-game team chat
+  wsSend('sendTeamChat', { message: txt });
+  chatMessages.unshift({name:'You (Dashboard)',text:txt,time:'now'});
+  renderChat();inp.value='';
+  toast('💬','Sent to Team Chat',txt.substring(0,40),'info');
+}
+
+// ════════════ ROLE RULES ════════════
+function renderRoleRules(){
+  const el=document.getElementById('roleRows');
+  if(!el)return;
+  el.innerHTML=S.roleRules.map((r,i)=>`
+    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;padding:8px;background:var(--bg3);border-radius:4px;border:1px solid var(--border)">
+      <span class="kw-badge">${r.keyword}</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--blue)">${r.roleId}</span>
+      <label class="tog"><input type="checkbox" ${r.enabled?'checked':''} onchange="S.roleRules[${i}].enabled=this.checked"><div class="tog-sl"></div></label>
+    </div>`).join('');
+}
+
+function addRoleRule(){
+  const kw=document.getElementById('rr-kw').value.trim().toUpperCase();
+  const role=document.getElementById('rr-role').value.trim();
+  const ch=document.getElementById('rr-ch').value.trim();
+  const on=document.getElementById('rr-on').checked;
+  if(!kw||!role){toast('⚠️','Fields Required','Keyword and Role ID needed','warn');return;}
+  S.roleRules.push({keyword:kw,roleId:role,channel:ch,enabled:on});
+  renderRoleRules();closeModal('modal-role');
+  document.getElementById('rr-kw').value='';document.getElementById('rr-role').value='';
+  toast('✅','Role Rule Added',kw+' → '+role,'success');
+}
+
+// ════════════ VOICE ════════════
+function joinVoice(){
+  const chId=document.getElementById('voiceChannelId')?.value||'General';
+  S.voice.active=true;S.voice.channel=chId;
+  document.getElementById('voiceDot').className='voice-dot active';
+  document.getElementById('voiceStatusName').textContent='🔊 Live in: '+chId;
+  document.getElementById('voiceStatusDetail').textContent='TTS ready — monitoring alarms';
+  document.getElementById('chip-voice').textContent='🔊 Voice Live';
+  document.getElementById('chip-voice').className='chip green';
+  toast('🔊','Joined Voice','Bot is now live in voice channel','success');
+}
+function leaveVoice(){
+  S.voice.active=false;
+  document.getElementById('voiceDot').className='voice-dot inactive';
+  document.getElementById('voiceStatusName').textContent='Bot not in a voice channel';
+  document.getElementById('voiceStatusDetail').textContent='Configure in Voice Alerts tab';
+  document.getElementById('chip-voice').textContent='🔊 Voice Idle';
+  document.getElementById('chip-voice').className='chip amber';
+  toast('🔇','Left Voice','Bot disconnected from voice','info');
+}
+function testTTS(){toast('🔈','TTS Test','Playing: "WARNING! Base Perimeter triggered!"','info');}
+
+// ════════════ LOCK SCREEN — DUAL CODE ════════════
+const PASSCODE_KEY   = 'rl_passcode';   // user code  (default 5656)
+const ADMINCODE_KEY  = 'rl_admincode';  // admin code (default 2010)
+const SESSION_KEY    = 'rl_session';    // 'user' or 'admin'
+const CONN_KEY       = 'rl_conn';
+const NOTES_KEY      = 'rl_notes';
+
+let lockInput  = '';
+let lockFailed = 0;
+let adminInput = '';
+
+function getUserCode()  { return localStorage.getItem(PASSCODE_KEY)  || '5656'; }
+function getAdminCode() { return localStorage.getItem(ADMINCODE_KEY) || '2010'; }
+
+// ── Lock screen numpad ──
+function lockKey(k) {
+  if (lockInput.length >= 4) return;
+  lockInput += k;
+  updateLockDots();
+  if (lockInput.length === 4) setTimeout(checkLockCode, 120);
+}
+function lockDel() { lockInput = lockInput.slice(0,-1); updateLockDots(); }
+
+function updateLockDots(prefix='ld', len=lockInput.length, error=false) {
+  for (let i=0;i<4;i++) {
+    const d = document.getElementById(prefix+i);
+    if (!d) continue;
+    d.className = 'lock-dot' + (i < len ? ' filled' : '') + (error ? ' wrong' : '');
+  }
+}
+
+function checkLockCode() {
+  const code = lockInput;
+  lockInput = '';
+
+  if (code === getUserCode()) {
+    grantAccess('user');
+  } else if (code === getAdminCode()) {
+    grantAccess('admin');
+  } else {
+    lockFailed++;
+    updateLockDots('ld', 4, true);
+    document.getElementById('lockErr').textContent =
+      lockFailed >= 3 ? '❌ Wrong code — ask Damo Unknown for access.' : '❌ Incorrect code. Try again.';
+    setTimeout(() => updateLockDots('ld', 0, false), 700);
+  }
+}
+
+function grantAccess(mode) {
+  sessionStorage.setItem(SESSION_KEY, mode);
+  document.getElementById('lockScreen').classList.add('hidden');
+  document.getElementById('lockErr').textContent = '';
+  updateLockDots('ld', 0, false);
+  applyMode(mode);
+  loadSavedConn();
+  toast(mode==='admin'?'⚡':'🔓',
+    mode==='admin' ? 'Admin Mode' : 'Access Granted',
+    mode==='admin' ? 'Full system access unlocked' : 'Welcome to RUST LINK',
+    mode==='admin' ? 'warn' : 'success');
+}
+
+function applyMode(mode) {
+  const isAdmin = mode === 'admin';
+  // Badge
+  const badge = document.getElementById('modeBadge');
+  if (badge) {
+    badge.textContent = isAdmin ? 'ADMIN' : 'USER';
+    badge.className   = 'mode-badge ' + (isAdmin ? 'admin' : 'user');
+  }
+  // Admin banner
+  const banner = document.getElementById('adminBanner');
+  if (banner) banner.classList.toggle('hidden', !isAdmin);
+  // Unlock/lock admin nav items
+  document.querySelectorAll('.nav-item.admin-only').forEach(el => {
+    el.classList.toggle('locked', !isAdmin);
+  });
+  // Admin button label
+  const btn = document.getElementById('adminModeBtn');
+  if (btn) {
+    btn.textContent   = isAdmin ? '🔓 Admin' : '⚙ Admin';
+    btn.style.color   = isAdmin ? 'var(--amber)' : '';
+    btn.style.borderColor = isAdmin ? 'rgba(245,166,35,.4)' : '';
+  }
+  S.mode = mode;
+}
+
+// Lock out
+function lockOut() {
+  sessionStorage.removeItem(SESSION_KEY);
+  document.getElementById('lockScreen').classList.remove('hidden');
+  lockInput = '';
+  updateLockDots('ld', 0, false);
+  document.getElementById('lockErr').textContent = '';
+  // Re-lock admin items
+  document.querySelectorAll('.nav-item.admin-only').forEach(el => el.classList.add('locked'));
+  const badge = document.getElementById('modeBadge');
+  if (badge) { badge.textContent='USER'; badge.className='mode-badge user'; }
+  const banner = document.getElementById('adminBanner');
+  if (banner) banner.classList.add('hidden');
+}
+
+// Admin nav guard
+function adminNavTo(panel, el) {
+  if (S.mode !== 'admin') {
+    toast('🔒', 'Admin Only', 'Enter admin code (⚙ Admin button) to access this', 'warn');
+    return;
+  }
+  navTo(panel, el);
+}
+
+// ── Admin modal numpad ──
+function promptAdminMode() {
+  if (S.mode === 'admin') { exitAdminMode(); return; }
+  adminInput = '';
+  updateLockDots('ad', 0, false);
+  document.getElementById('adminErr').textContent = '';
+  openModal('modal-admin');
+}
+function adminKey(k) {
+  if (adminInput.length >= 4) return;
+  adminInput += k;
+  updateLockDots('ad', adminInput.length, false);
+  if (adminInput.length === 4) setTimeout(checkAdminCode, 120);
+}
+function adminKeyDel() { adminInput = adminInput.slice(0,-1); updateLockDots('ad', adminInput.length, false); }
+function checkAdminCode() {
+  if (adminInput === getAdminCode()) {
+    closeModal('modal-admin');
+    adminInput = '';
+    grantAccess('admin');
+  } else {
+    updateLockDots('ad', 4, true);
+    document.getElementById('adminErr').textContent = '❌ Wrong admin code';
+    adminInput = '';
+    setTimeout(() => updateLockDots('ad', 0, false), 700);
+  }
+}
+function exitAdminMode() {
+  sessionStorage.setItem(SESSION_KEY, 'user');
+  applyMode('user');
+  toast('🔒', 'Admin Mode Exited', 'Back to user mode', 'info');
+}
+
+// keyboard support on lock screen
+document.addEventListener('keydown', (e) => {
+  if (!document.getElementById('lockScreen').classList.contains('hidden')) {
+    if (e.key >= '0' && e.key <= '9') lockKey(e.key);
+    if (e.key === 'Backspace') lockDel();
+  }
+});
+
+function savePasscode() {
+  const inp = document.getElementById('cfg-passcode');
+  const val = inp?.value?.trim();
+  if (!val || !/^\d{4,8}$/.test(val)) { toast('⚠️','Invalid Code','Use 4-8 digits only','warn'); return; }
+  localStorage.setItem(PASSCODE_KEY, val);
+  inp.value = '';
+  toast('🔑','Team Code Updated','New code saved','success');
+}
+
+// ════════════ RAID NOTES ════════════
+S.notes = loadNotesFromStorage();
+
+function loadNotesFromStorage() {
+  try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '[]'); }
+  catch { return []; }
+}
+function saveNotesToStorage() {
+  localStorage.setItem(NOTES_KEY, JSON.stringify(S.notes));
+}
+
+// Seed with example notes if empty
+function seedNotes() {
+  if (S.notes.length > 0) return;
+  S.notes = [
+    { id:1, title:'Offline raid target — 2x2 at Grid G7', cat:'raid', body:'Stone base, no TC found yet. 3 doors on north side, all wood.\nEstimated loot: AKs, maybe rocket launcher in loot room.\nBest approach: North wall, C4 ×3 should do it.', author:'Damo Unknown', time:'2h ago', pinned:true },
+    { id:2, title:'Enemy squad spotted — 4 man roofcamping H4', cat:'warning', body:'Saw them at H4 hill watching launch site.\nFull metal gear, SAR + bolts. Avoid that area at night.', author:'xXSlayer99', time:'45m ago', pinned:false },
+    { id:3, title:'Vending machine deal — AKs for 800 scrap at F3', cat:'loot', body:'Player shop near F3 compound. Selling AK47s for 800 scrap each, was 1200 yesterday.\nStock up while it lasts.', author:'BuilderBob', time:'1h ago', pinned:false },
+    { id:4, title:'TC breach plan — hit while they are offline', cat:'plan', body:'Confirmed offline 22:00–08:00 their time (EU players).\nPlan: Raid Sunday 23:00 AEST.\nNeed: 10x C4, 4x rockets. Assign: Damo (explosives), Slayer (cover).', author:'Damo Unknown', time:'3h ago', pinned:true },
+  ];
+  saveNotesToStorage();
+}
+
+function renderNotes() {
+  const filter = document.getElementById('notes-filter')?.value || 'all';
+  const pinnedEl = document.getElementById('pinned-strip');
+  const gridEl   = document.getElementById('notes-grid');
+  if (!gridEl) return;
+
+  const pinned   = S.notes.filter(n => n.pinned);
+  const unpinned = filter === 'all'
+    ? S.notes.filter(n => !n.pinned)
+    : S.notes.filter(n => !n.pinned && n.cat === filter);
+
+  // Pinned strip
+  if (pinnedEl) {
+    if (pinned.length && (filter === 'all' || filter === 'pinned')) {
+      pinnedEl.innerHTML = `
+        <div style="font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--amber);text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+          <span>📌</span> PINNED NOTES
+        </div>
+        <div class="notes-grid">${pinned.map(n => noteHTML(n)).join('')}</div>
+        <div style="height:1px;background:var(--border);margin:18px 0;"></div>`;
+    } else {
+      pinnedEl.innerHTML = '';
+    }
+  }
+
+  // Main grid
+  if (unpinned.length === 0 && (filter === 'all' ? S.notes.filter(n=>!n.pinned).length === 0 : true)) {
+    gridEl.innerHTML = `<div class="notes-empty" style="grid-column:1/-1;"><span class="big">📋</span>No notes yet. Hit <strong>+ Add Note</strong> to post intel for your team.</div>`;
+  } else {
+    gridEl.innerHTML = unpinned.map(n => noteHTML(n)).join('');
+  }
+}
+
+function noteHTML(n) {
+  const colorMap = { raid:'danger', intel:'info', loot:'success', warning:'pinned', plan:'info' };
+  const tagLabels = { raid:'🔥 RAID', intel:'🔵 INTEL', loot:'🟢 LOOT', warning:'⚠ WARNING', plan:'🗺 PLAN' };
+  const cardClass = n.pinned ? 'pinned' : (colorMap[n.cat] || '');
+  return `
+    <div class="note-card ${cardClass}" id="note-${n.id}">
+      <div class="note-inner">
+        <div class="note-header">
+          <span class="note-tag ${n.cat}">${tagLabels[n.cat]||n.cat}</span>
+          <div class="note-title-text">${escHtml(n.title)}</div>
+        </div>
+        <div class="note-body">${escHtml(n.body)}</div>
+        <div class="note-footer">
+          <span class="note-author">👤 ${escHtml(n.author)}</span>
+          <span class="note-time">${n.time}</span>
+          <div class="note-actions">
+            <button class="note-pin-btn" onclick="togglePin(${n.id})">${n.pinned ? '📌 Unpin' : '📌 Pin'}</button>
+            <button class="note-del-btn" onclick="deleteNote(${n.id})">✕ Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function addNote() {
+  const title  = document.getElementById('note-title')?.value.trim();
+  const body   = document.getElementById('note-body')?.value.trim();
+  const cat    = document.getElementById('note-cat')?.value || 'raid';
+  const author = document.getElementById('note-author')?.value.trim() || 'Anonymous';
+  const pin    = document.getElementById('note-pin')?.checked || false;
+  if (!title) { toast('⚠️','Title Required','Give your note a title','warn'); return; }
+  const note = {
+    id: Date.now(),
+    title, body: body || '', cat, author,
+    time: 'just now', pinned: pin
+  };
+  if (pin) S.notes.unshift(note);
+  else S.notes.push(note);
+  saveNotesToStorage();
+  renderNotes();
+  closeModal('modal-note');
+  document.getElementById('note-title').value = '';
+  document.getElementById('note-body').value  = '';
+  document.getElementById('note-pin').checked = false;
+  toast('📋', 'Note Posted', title.slice(0,40), 'success');
+}
+
+function togglePin(id) {
+  const n = S.notes.find(x => x.id === id);
+  if (!n) return;
+  n.pinned = !n.pinned;
+  saveNotesToStorage();
+  renderNotes();
+  toast('📌', n.pinned ? 'Note Pinned' : 'Note Unpinned', n.title.slice(0,30), 'info');
+}
+
+function deleteNote(id) {
+  S.notes = S.notes.filter(x => x.id !== id);
+  saveNotesToStorage();
+  renderNotes();
+  toast('🗑','Note Deleted','','info');
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ════════════ WS URL HINT ════════════
+function showWsUrlHint(inp) {
+  const hint = document.getElementById('ws-url-hint');
+  if (!hint) return;
+  const v = inp.value.trim();
+  if (!v) { hint.textContent = ''; return; }
+  if (v.startsWith('https://')) {
+    hint.textContent = '→ Will connect as: wss://' + v.replace('https://','');
+    hint.style.color = 'var(--green)';
+  } else if (v.startsWith('wss://') || v.startsWith('ws://')) {
+    hint.textContent = '→ ' + v;
+    hint.style.color = 'var(--green)';
+  } else {
+    hint.textContent = '⚠ Paste your full Railway URL (e.g. https://your-app.up.railway.app)';
+    hint.style.color = 'var(--amber)';
+  }
+}
+
+// Patch setWsStatus to also update the panel dot + status text
+const _origSetWsStatus = setWsStatus;
+function setWsStatus(status) {
+  _origSetWsStatus(status);
+  const dot  = document.getElementById('wsDot');
+  const txt  = document.getElementById('wsStatusText');
+  const url  = localStorage.getItem('rl_ws_url') || '';
+  switch (status) {
+    case 'connected':
+      if (dot) dot.className = 'conn-dot on';
+      if (txt) txt.textContent = '● Connected to ' + url;
+      if (txt) txt.style.color = 'var(--green)';
+      break;
+    case 'connecting':
+      if (dot) dot.className = 'conn-dot connecting';
+      if (txt) txt.textContent = '◌ Connecting to ' + url + '…';
+      if (txt) txt.style.color = 'var(--amber)';
+      break;
+    default:
+      if (dot) dot.className = 'conn-dot off';
+      if (txt) txt.textContent = url ? '● Disconnected — retrying…' : 'Enter your Railway URL above';
+      if (txt) txt.style.color = 'var(--text3)';
+  }
+  // Pre-fill the URL input if we have a saved one
+  const inp = document.getElementById('ws-url-inp');
+  if (inp && !inp.value && url) inp.value = url.replace('wss://','https://');
+}
+
+// ════════════ INIT ════════════
+document.addEventListener('DOMContentLoaded',()=>{
+  S.mode = sessionStorage.getItem(SESSION_KEY) || 'none';
+
+  renderSwitches();renderAlarms();renderAlerts();renderTeam();renderChat();renderRoleRules();
+  seedNotes();renderNotes();
+  setInterval(updateClock,1000);updateClock();
+  setInterval(updateCountdown,1000);updateCountdown();
+  setTimeout(drawPopChart,100);
+  window.addEventListener('resize',drawPopChart);
+
+  // Restore session
+  const savedMode = sessionStorage.getItem(SESSION_KEY);
+  if (savedMode === 'user' || savedMode === 'admin') {
+    document.getElementById('lockScreen').classList.add('hidden');
+    applyMode(savedMode);
+    loadSavedConn();
+    // Start WebSocket connection to bot
+    connectWS();
+  }
+
+  // Pre-fill WS URL input if saved
+  const savedUrl = localStorage.getItem('rl_ws_url');
+  const wsInp = document.getElementById('ws-url-inp');
+  if (wsInp && savedUrl) wsInp.value = savedUrl.replace('wss://','https://');
+});
+function saveConnConfig() {
+  const data = {
+    ip:         document.getElementById('conn-ip')?.value?.trim(),
+    port:       document.getElementById('conn-port')?.value?.trim() || '28082',
+    servername: document.getElementById('conn-servername')?.value?.trim(),
+    steam:      document.getElementById('conn-steam')?.value?.trim(),
+    token:      document.getElementById('conn-token')?.value?.trim(),
+  };
+  if (!data.ip) { toast('⚠️', 'IP Required', '', 'warn'); return; }
+  localStorage.setItem(CONN_KEY, JSON.stringify(data));
+
+  // Update masked display
+  refreshMaskedFields(data);
+
+  const badge = document.getElementById('savedServerTag');
+  if (badge) badge.style.display = 'flex';
+  const b2 = document.getElementById('connSavedBadge');
+  if (b2) { b2.classList.add('show'); setTimeout(() => b2.classList.remove('show'), 3000); }
+
+  // Update sidebar display
+  if (data.servername || data.ip) {
+    document.getElementById('connName').textContent = data.servername || data.ip;
+    document.getElementById('connAddr').textContent = data.ip + ':' + data.port;
+  }
+
+  toast('💾', 'Saved', 'Server config saved to your browser', 'success');
+}
+
+function loadSavedConn() {
+  try {
+    const raw = localStorage.getItem(CONN_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+    setVal('conn-ip', data.ip);
+    setVal('conn-port', data.port);
+    setVal('conn-servername', data.servername);
+    setVal('conn-steam', data.steam);
+    setVal('conn-token', data.token);
+
+    refreshMaskedFields(data);
+
+    if (data.servername || data.ip) {
+      const nameEl = document.getElementById('connName');
+      const addrEl = document.getElementById('connAddr');
+      if (nameEl) nameEl.textContent = data.servername || data.ip;
+      if (addrEl) addrEl.textContent = (data.ip || '') + ':' + (data.port || '28082');
+    }
+    const badge = document.getElementById('savedServerTag');
+    if (badge && data.ip) badge.style.display = 'flex';
+
+    toast('⚡', 'Config Loaded', 'Server settings restored from memory', 'success');
+  } catch (e) { /* no saved config */ }
+}
+
+function refreshMaskedFields(data) {
+  // Steam ID masked
+  const steamM = document.getElementById('steamIdMasked');
+  if (steamM) steamM.textContent = data.steam
+    ? data.steam.slice(0, 4) + '●●●●●●●●●●' + data.steam.slice(-3)
+    : 'Not set';
+  // Token masked
+  const tokM = document.getElementById('tokenMasked');
+  if (tokM) tokM.textContent = data.token
+    ? '●●●●●●●●●●●●' + data.token.slice(-4)
+    : 'Not set';
+}
+
+function toggleSteamReveal(type) {
+  if (type === 'steam') {
+    const disp = document.getElementById('steamIdDisplay');
+    const inp  = document.getElementById('conn-steam');
+    const btn  = disp?.querySelector('.steam-reveal-btn');
+    const showing = inp?.style.display !== 'none';
+    if (inp) inp.style.display = showing ? 'none' : 'block';
+    if (disp) disp.style.display = showing ? 'flex' : 'none';
+    if (btn) btn.textContent = showing ? 'reveal' : 'hide';
+  } else {
+    const disp = document.getElementById('tokenDisplay');
+    const inp  = document.getElementById('conn-token');
+    const btn  = disp?.querySelector('.steam-reveal-btn');
+    const showing = inp?.style.display !== 'none';
+    if (inp) inp.style.display = showing ? 'none' : 'block';
+    if (disp) disp.style.display = showing ? 'flex' : 'none';
+    if (btn) btn.textContent = showing ? 'reveal' : 'hide';
+  }
+}
+
+function markUnsaved() {
+  const b = document.getElementById('savedServerTag');
+  if (b) b.style.display = 'none';
+}
+
+function connectServer() {
+  const ip    = document.getElementById('conn-ip')?.value?.trim();
+  const port  = document.getElementById('conn-port')?.value?.trim() || '28082';
+  const steam = document.getElementById('conn-steam')?.value?.trim();
+  const tok   = document.getElementById('conn-token')?.value?.trim();
+  const name  = document.getElementById('conn-servername')?.value?.trim();
+
+  if (!ip || !steam || !tok) {
+    toast('⚠️', 'Missing Fields', 'Fill in IP, Steam ID, and Token', 'warn');
+    return;
+  }
+  const log = document.getElementById('connLog');
+  if (log) log.innerHTML = '<span style="color:var(--amber)">⟳ Connecting to ' + ip + ':' + port + '…</span>';
+  document.getElementById('connDot').className = 'conn-dot connecting';
+  document.getElementById('chip-conn').textContent = '◌ Connecting…';
+
+  setTimeout(() => {
+    S.connected = true;
+    document.getElementById('connDot').className = 'conn-dot on';
+    document.getElementById('connName').textContent = name || ip;
+    document.getElementById('connAddr').textContent = ip + ':' + port;
+    document.getElementById('chip-conn').textContent = '◉ Connected';
+    document.getElementById('chip-conn').className = 'chip green';
+    document.getElementById('botStatus').textContent = '● Online';
+    document.getElementById('botStatus').className = 'bot-st on';
+    document.getElementById('chip-bot').textContent = '🤖 Bot Online';
+    document.getElementById('chip-bot').className = 'chip green';
+    if (log) log.innerHTML =
+      '<span style="color:var(--green)">✓ Connected to ' + (name || ip) + '</span>\n' +
+      '<span style="color:var(--text3)">Steam: ' + (steam ? steam.slice(0, 4) + '●●●●●●●●●' : '—') + '</span>\n' +
+      '<span style="color:var(--green)">✓ Slash commands registered</span>\n' +
+      '<span style="color:var(--green)">✓ Monitoring active</span>';
+    // Auto-save on connect
+    saveConnConfig();
+    toast('✅', 'Connected!', name || (ip + ':' + port), 'success');
+    setTimeout(() => addAlert({type:'raid',icon:'💥',title:'Raid Alert — Explosions Detected',detail:'Near base TC · Grid F5',time:'just now'}), 5000);
+  }, 1600);
+}
+function disconnectServer(){
+  S.connected=false;
+  document.getElementById('connDot').className='conn-dot off';
+  document.getElementById('connName').textContent='Not Connected';
+  document.getElementById('connAddr').textContent='Tap to configure';
+  document.getElementById('chip-conn').textContent='◉ Disconnected';
+  document.getElementById('chip-conn').className='chip rust';
+  document.getElementById('botStatus').textContent='● Offline';document.getElementById('botStatus').className='bot-st off';
+  document.getElementById('chip-bot').textContent='🤖 Bot Offline';document.getElementById('chip-bot').className='chip blue';
+  toast('🔌','Disconnected','','info');
+}
+
+function postSwitchPanel(){toast('📤','Panel Posted','Switch panel sent to Discord channel','success');}
+
+// ════════════ SETTINGS ════════════
+function saveSettings(){toast('💾','Saved','All settings saved successfully','success');}
+
+function exportConfig(){
+  const cfg=`# ── RUST LINK .ENV ──
+DISCORD_TOKEN=
+DISCORD_CLIENT_ID=
+DISCORD_GUILD_ID=
+# Alert channels
+CHANNEL_RAIDS=
+CHANNEL_ALARMS=
+CHANNEL_DEATHS=
+CHANNEL_EVENTS=
+CHANNEL_TEAM_CHAT=
+CHANNEL_SWITCHES=
+CHANNEL_LOG=
+CHANNEL_WIPE=
+# Voice
+VOICE_CHANNEL_ID=
+TTS_VOLUME=80
+# Rust Server
+RUST_IP=
+RUST_PORT=28082
+STEAM_ID=
+PLAYER_TOKEN=
+# Wipe date
+WIPE_DATE=
+# Switches: name:entityId,name:entityId
+SWITCHES=${S.switches.map(s=>s.name+':'+s.eid).join(',')}
+# Alarms: name:entityId,name:entityId
+ALARMS=${S.alarms.map(a=>a.name+':'+a.eid).join(',')}
+# Role rules: KEYWORD:roleId,KEYWORD:roleId
+ROLE_RULES=${S.roleRules.map(r=>r.keyword+':'+r.roleId).join(',')}
+`;
+  document.getElementById('envOutput').value=cfg;
+  navTo('settings',document.querySelector('[data-panel=settings]'));
+  toast('📤','Config Exported','Copy the .env content above','success');
+}
+
+// ════════════ MODAL ════════════
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-ov').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+
+// ════════════ TOAST ════════════
+function toast(icon,msg,sub,type='info'){
+  const w=document.getElementById('toasts');
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<div class="toast-icon">${icon}</div><div class="toast-body"><div class="toast-msg">${msg}</div>${sub?`<div class="toast-sub">${sub}</div>`:''}</div>`;
+  t.onclick=()=>t.remove();
+  w.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300)},3500);
+}
+
+// ════════════ CLOCKS ════════════
+function updateClock(){
+  const now=new Date();
+  const h=String(now.getHours()).padStart(2,'0');
+  const m=String(now.getMinutes()).padStart(2,'0');
+  // Simulate game time
+  const gameHour=(now.getHours()*60+now.getMinutes())/60*1.5%24;
+  const gh=Math.floor(gameHour).toString().padStart(2,'0');
+  const gm=Math.floor((gameHour%1)*60).toString().padStart(2,'0');
+  const isDay=gameHour>=6&&gameHour<20;
+  const dashT=document.getElementById('dash-time');
+  const dashDN=document.getElementById('dash-daynight');
+  const gtd=document.getElementById('gameTimeDisp');
+  const te=document.getElementById('timeEmoji');
+  const dni=document.getElementById('dayNightInfo');
+  const dp=document.getElementById('dayPbar');
+  if(dashT)dashT.textContent=gh+':'+gm;
+  if(dashDN)dashDN.textContent=(isDay?'☀ Day':'🌙 Night')+' · '+Math.round(isDay?20-gameHour:24-gameHour+6)+'h to '+(isDay?'night':'day');
+  if(gtd)gtd.textContent=gh+':'+gm;
+  if(te)te.textContent=isDay?'☀️':'🌙';
+  if(dni)dni.textContent=(isDay?'Day':'Night')+' · '+(isDay?'Night':'Day')+' in ~'+Math.round(isDay?20-gameHour:24-gameHour+6)+'h';
+  if(dp)dp.style.width=(gameHour/24*100)+'%';
+}
+
+function updateCountdown(){
+  const wipeSetting=document.getElementById('cfg-wipe')?.value;
+  let target=wipeSetting?new Date(wipeSetting):new Date(Date.now()+4.5*86400000);
+  const diff=target-Date.now();
+  if(diff<0)return;
+  const d=Math.floor(diff/86400000);
+  const h=Math.floor((diff%86400000)/3600000);
+  const m=Math.floor((diff%3600000)/60000);
+  const s=Math.floor((diff%60000)/1000);
+  ['d','h','m','s'].forEach((k,i)=>{
+    const el=document.getElementById('cd-'+k);
+    if(el)el.textContent=String([d,h,m,s][i]).padStart(2,'0');
+  });
+}
+
+// ════════════ POP CHART ════════════
+function drawPopChart(){
+  const c=document.getElementById('popChart');
+  if(!c)return;
+  const ctx=c.getContext('2d');
+  c.width=c.offsetWidth;c.height=120;
+  const data=[118,124,131,138,135,142,139,144,140,142];
+  const max=200;
+  const w=c.width;const h=c.height;
+  ctx.clearRect(0,0,w,h);
+  // Grid lines
+  ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=h-(h*(i/4));ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+  // Area
+  const grd=ctx.createLinearGradient(0,0,0,h);
+  grd.addColorStop(0,'rgba(206,66,43,0.3)');grd.addColorStop(1,'rgba(206,66,43,0)');
+  ctx.beginPath();
+  const step=w/(data.length-1);
+  ctx.moveTo(0,h);
+  data.forEach((v,i)=>{ctx.lineTo(i*step,h-(h*v/max));});
+  ctx.lineTo(w,h);ctx.closePath();ctx.fillStyle=grd;ctx.fill();
+  // Line
+  ctx.beginPath();ctx.strokeStyle='var(--rust)';ctx.lineWidth=2;
+  data.forEach((v,i)=>{i===0?ctx.moveTo(0,h-(h*v/max)):ctx.lineTo(i*step,h-(h*v/max));});
+  ctx.stroke();
+  // Dots
+  data.forEach((v,i)=>{ctx.beginPath();ctx.arc(i*step,h-(h*v/max),3,0,Math.PI*2);ctx.fillStyle='var(--rust)';ctx.fill();});
+}
+
+// ════════════ SAVED CONN ════════════
+</script>
+</body>
+</html>

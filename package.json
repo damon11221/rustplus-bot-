@@ -1,12 +1,11 @@
 {
   "name": "rust-link-v2",
   "version": "2.0.0",
-  "description": "Advanced Rust+ companion bot \u2014 switches, voice TTS, role pings, in-game commands, Discord panel",
+  "description": "Advanced Rust+ companion bot — switches, voice TTS, role pings, in-game commands, Discord panel, live dashboard",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
     "dev": "nodemon bot.js",
-    "panel": "node bot.js --panel-only",
     "postinstall": "node scripts/patch-rustplus.js"
   },
   "dependencies": {
@@ -16,7 +15,8 @@
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.5",
     "libsodium-wrappers": "^0.7.13",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
