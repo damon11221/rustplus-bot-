@@ -1,12 +1,6 @@
 /**
  * Postinstall patch for @liamcottle/rustplus.js proto compatibility.
- *
- * Some servers omit fields that rustplus.proto marks as REQUIRED (proto2),
- * causing protobufjs decode crashes like:
- *   missing required 'queuedPlayers'
- *   missing required 'isOnline'
- *
- * This script makes those fields OPTIONAL in the installed rustplus.proto.
+ * Makes required fields optional when servers omit them.
  */
 const fs = require("fs");
 const path = require("path");
@@ -16,18 +10,16 @@ function patchProto(protoPath) {
   let s = fs.readFileSync(protoPath, "utf8");
   let changed = false;
 
-  // queuedPlayers (uint32) - make optional regardless of field number
-  const reQueued = /required\s+uint32\s+queuedPlayers\s*=\s*\d+\s*;/g;
-  if (reQueued.test(s)) {
-    s = s.replace(reQueued, (m) => m.replace(/^required/, "optional"));
-    changed = true;
-  }
+  const patterns = [
+    /required\s+uint32\s+queuedPlayers\s*=\s*\d+\s*;/g,
+    /required\s+bool\s+isOnline\s*=\s*\d+\s*;/g,
+  ];
 
-  // isOnline (bool) - make optional regardless of field number
-  const reOnline = /required\s+bool\s+isOnline\s*=\s*\d+\s*;/g;
-  if (reOnline.test(s)) {
-    s = s.replace(reOnline, (m) => m.replace(/^required/, "optional"));
-    changed = true;
+  for (const re of patterns) {
+    if (re.test(s)) {
+      s = s.replace(re, (m) => m.replace(/^required/, "optional"));
+      changed = true;
+    }
   }
 
   if (changed) {
@@ -39,8 +31,6 @@ function patchProto(protoPath) {
 }
 
 const protoPath = path.join(process.cwd(), "node_modules", "@liamcottle", "rustplus.js", "rustplus.proto");
-const ok = patchProto(protoPath);
-
-if (!ok) {
+if (!patchProto(protoPath)) {
   console.warn("[patch-rustplus] No patch applied (proto not found or already compatible).");
 }

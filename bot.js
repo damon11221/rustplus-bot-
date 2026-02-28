@@ -1,12 +1,12 @@
 require('dotenv').config();
-const http = require('http');
-const { WebSocketServer } = require('ws');
 const {
   Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder,
   ButtonStyle, SlashCommandBuilder, REST, Routes, PermissionsBitField
 } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
 const RustPlus = require('@liamcottle/rustplus.js');
+const http = require('http');
+const WebSocket = require('ws');
 const { execSync } = require('child_process');
 const fs = require('fs');
 
@@ -58,6 +58,71 @@ const C = {
   wipeDate: process.env.WIPE_DATE ? new Date(process.env.WIPE_DATE) : null,
 };
 
+// ─── DASHBOARD HTTP + WEBSOCKET (Railway) ───────────────────────────────────
+const PORT = Number(process.env.PORT || 3000);
+
+// Very small HTTP server (health + serves index.html if present)
+const server = http.createServer((req, res) => {
+  if (req.url === '/' || req.url === '/health' || req.url === '/status') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    return res.end('RustLink OK');
+  }
+  res.writeHead(404, { 'Content-Type': 'text/plain' });
+  res.end('Not Found');
+});
+
+const wss = new WebSocket.Server({ server });
+const wsClients = new Set();
+
+function snapshotState() {
+  const switches = Array.from(knownSwitches.entries()).map(([id, sw]) => ({
+    id, ...sw, state: entityStates[id] ?? false
+  }));
+  const alarms = Array.from(knownAlarms.entries()).map(([id, a]) => ({ id, ...a }));
+  return {
+    type: 'state',
+    server: lastServerInfo || null,
+    team: lastTeamInfo || null,
+    switches,
+    alarms,
+    ts: Date.now()
+  };
+}
+
+function wsBroadcast(obj) {
+  const msg = JSON.stringify(obj);
+  for (const ws of wsClients) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+  }
+}
+
+wss.on('connection', (ws) => {
+  wsClients.add(ws);
+  // Send initial snapshot
+  try { ws.send(JSON.stringify(snapshotState())); } catch {}
+  ws.on('close', () => wsClients.delete(ws));
+  ws.on('message', async (raw) => {
+    let m;
+    try { m = JSON.parse(String(raw || '')); } catch { return; }
+
+    // Client can request fresh snapshot
+    if (m?.type === 'get_state') {
+      try { ws.send(JSON.stringify(snapshotState())); } catch {}
+      return;
+    }
+
+    // Toggle a switch: {type:'set_switch', id, value:true/false}
+    if (m?.type === 'set_switch' && m.id) {
+      const ok = await setEntityValue(m.id, !!m.value);
+      wsBroadcast({ type: 'switch_update', id: m.id, state: entityStates[m.id] ?? false, ok, ts: Date.now() });
+      return;
+    }
+  });
+});
+
+server.listen(PORT, () => console.log(`[Web] HTTP/WS listening on :${PORT}`));
+
+
 // ─── ROLE RULES ─────────────────────────────────────────────────────────────
 // Format: KEYWORD:roleId,KEYWORD:roleId
 const roleRules = [];
@@ -89,122 +154,6 @@ if (process.env.ALARMS) {
 }
 
 // ─── STATE ──────────────────────────────────────────────────────────────────
-// ─── DASHBOARD HTTP + WEBSOCKET SERVER (Railway) ───────────────────────────
-const PORT = parseInt(process.env.PORT || '8080', 10);
-
-// Simple HTTP server so Railway has something to route to (and for health checks)
-const httpServer = http.createServer((req, res) => {
-  if (req.url === '/' || req.url === '/health' || req.url === '/status') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    return res.end('RustLink OK');
-  }
-  res.writeHead(404, { 'Content-Type': 'text/plain' });
-  res.end('Not found');
-});
-
-const wss = new WebSocketServer({ noServer: true });
-const wsClients = new Set();
-
-function wsSend(ws, obj) {
-  try { ws.send(JSON.stringify(obj)); } catch {}
-}
-
-function getFullState() {
-  // Convert Maps to arrays for JSON
-  const switches = Array.from(knownSwitches.entries()).map(([entityId, v]) => ({
-    entityId,
-    name: v.name,
-    icon: v.icon || '⚡',
-    value: !!entityStates[entityId],
-    inPanel: v.inPanel !== false
-  }));
-
-  const alarms = Array.from(knownAlarms.entries()).map(([entityId, v]) => ({
-    entityId,
-    name: v.name,
-    enabled: v.enabled !== false,
-    voice: v.voice !== false
-  }));
-
-  const members = (teamInfo && teamInfo.members) ? teamInfo.members.map(m => ({
-    steamId: String(m.steamId),
-    name: m.name,
-    isOnline: m.isOnline ?? null,
-    x: m.x ?? null,
-    y: m.y ?? null,
-    hp: m.health ?? null
-  })) : [];
-
-  return {
-    serverInfo,
-    team: { leaderSteamId: teamInfo.leaderSteamId ? String(teamInfo.leaderSteamId) : null, members },
-    switches,
-    alarms,
-    popHistory,
-    alerts: C.alerts
-  };
-}
-
-function broadcastWS(type, data) {
-  const msg = JSON.stringify({ type, data });
-  for (const c of wsClients) {
-    if (c.readyState === 1) {
-      try { c.send(msg); } catch {}
-    }
-  }
-}
-
-httpServer.on('upgrade', (req, socket, head) => {
-  // Accept WS on / or /ws
-  const url = req.url || '/';
-  if (url !== '/' && !url.startsWith('/ws')) {
-    socket.destroy();
-    return;
-  }
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req);
-  });
-});
-
-wss.on('connection', (ws) => {
-  wsClients.add(ws);
-  wsSend(ws, { type: 'botReady', tag: client?.user?.tag || 'RustLink Bot' });
-  wsSend(ws, { type: 'fullState', data: getFullState() });
-
-  ws.on('message', async (buf) => {
-    let msg;
-    try { msg = JSON.parse(buf.toString()); } catch { return; }
-
-    try {
-      if (msg.type === 'toggleSwitch') {
-        const entityId = String(msg.entityId || '');
-        const value = !!msg.value;
-        const ok = await setEntityValue(entityId, value);
-        wsSend(ws, { type: ok ? 'switchToggled' : 'error', entityId, value, message: ok ? undefined : 'Failed to toggle switch' });
-        if (ok) broadcastWS('stateUpdate', getFullState());
-      }
-
-      if (msg.type === 'sendTeamChat') {
-        const text = String(msg.message || '').trim();
-        if (text) await rustplus.sendTeamMessage(text);
-      }
-
-      // Spy feature placeholders (dashboard-only list)
-      if (msg.type === 'addSpy' || msg.type === 'removeSpy') {
-        // You can wire this into real tracking later; dashboard expects an ack only.
-        wsSend(ws, { type: 'spyEvent', action: msg.type, data: msg });
-      }
-    } catch (e) {
-      wsSend(ws, { type: 'error', message: e?.message || 'Unknown error' });
-    }
-  });
-
-  ws.on('close', () => wsClients.delete(ws));
-  ws.on('error', () => wsClients.delete(ws));
-});
-
-httpServer.listen(PORT, () => console.log(`[Dashboard] HTTP/WS listening on :${PORT}`));
-
 let rustplus      = null;
 let serverInfo    = {};
 let teamInfo      = {};
@@ -472,6 +421,7 @@ async function handleTeamChanged(tc) {
 
     lastTeamMembers[member.steamId] = member;
   });
+  try { lastTeamInfo = await rustplus.getTeamInfo(); wsBroadcast({ type: 'team_update', team: lastTeamInfo, ts: Date.now() }); } catch {}
 }
 
 function getGrid(x, y) {
@@ -617,7 +567,7 @@ async function handleIngameCommand(cmd, senderName) {
 
 // ─── ENTITY VALUE ────────────────────────────────────────────────────────────
 async function setEntityValue(entityId, value) {
-  try { await rustplus.setEntityValue(entityId, value); entityStates[entityId] = value; try { broadcastWS && broadcastWS('stateUpdate', getFullState()); } catch {} return true; }
+  try { await rustplus.setEntityValue(entityId, value); entityStates[entityId] = value; return true; }
   catch (e) { console.error('[setEntity]', e.message); return false; }
 }
 
@@ -739,12 +689,12 @@ function scheduleWipeReminders() {
 
 // ─── DATA FETCHERS ────────────────────────────────────────────────────────────
 async function refreshServerInfo() {
-  try { const r = await rustplus.getInfo(); serverInfo = r?.response?.info || {}; try { broadcastWS && broadcastWS('stateUpdate', getFullState()); } catch {} return serverInfo; }
+  try { const r = await rustplus.getInfo(); serverInfo = r?.response?.info || {}; return serverInfo; }
   catch { return serverInfo; }
 }
 
 async function refreshTeamInfo() {
-  try { const r = await rustplus.getTeamInfo(); teamInfo = r?.response?.teamInfo || {}; try { broadcastWS && broadcastWS('stateUpdate', getFullState()); } catch {} return teamInfo; }
+  try { const r = await rustplus.getTeamInfo(); teamInfo = r?.response?.teamInfo || {}; return teamInfo; }
   catch { return teamInfo; }
 }
 
