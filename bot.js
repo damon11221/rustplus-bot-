@@ -341,12 +341,19 @@ function buildState() {
     grid:    m.isOnline ? getGrid(m.x, m.y) : '—',
   }));
 
+  const envServerName = process.env.RUST_SERVER_NAME;
+  const envGamePort = parseInt(process.env.RUST_GAME_PORT);
+  const gamePort = Number.isFinite(envGamePort) ? envGamePort : null;
+
   return {
     connected:     rustConnected,
     botReady:      true,
-    serverName:    serverInfo.name          || C.rust.ip || 'Unknown',
+    serverName:    envServerName || serverInfo.name || C.rust.ip || 'Unknown',
     serverIp:      C.rust.ip               || '—',
-    serverPort:    C.rust.port,
+    serverPort:    gamePort || C.rust.port,
+    rustPlusPort:  C.rust.port,
+    gamePort:      gamePort,
+    serverInfoRaw: serverInfo,
     mapSize:       serverInfo.mapSize       || '—',
     seed:          serverInfo.seed          || '—',
     wipeTime:      serverInfo.wipeTime      || null,
