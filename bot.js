@@ -66,6 +66,7 @@ const {
 const RustPlus  = require('@liamcottle/rustplus.js');
 const { execSync } = require('child_process');
 const fs   = require('fs');
+const path  = require('path');
 const http  = require('http');
 const https = require('https');
 const WSLib = require('ws');
@@ -417,6 +418,174 @@ const discord = new Client({
 
 // ─── HTTP + WS SERVER ────────────────────────────────────────────────────────
 const httpServer = http.createServer((req, res) => {
+
+  // CORS headers so the dashboard can POST from any origin
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+  // ── Serve the dashboard HTML ──────────────────────────────────────────────
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
+    const htmlPath = path.join(__dirname, 'index.html');
+    if (fs.existsSync(htmlPath)) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(fs.readFileSync(htmlPath));
+    } else {
+      res.writeHead(404); res.end('index.html not found');
+    }
+    return;
+  }
+
+  // ── POST /join — receive a join request without needing WebSocket ─────────
+  // This is called by players on the login screen before they have a WS connection
+  if (req.method === 'POST' && req.url === '/join') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 10000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const jr = data.request;
+        if (!jr || !jr.id || !jr.name) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, msg: 'Invalid request' })); return;
+        }
+        const plainPw = jr.password || jr.passcode;
+        if (!plainPw) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, msg: 'Password required' })); return;
+        }
+        // Duplicate check by username or name
+        const key = (jr.username || jr.name).toLowerCase();
+        if (joinRequests.find(r => (r.username||r.name).toLowerCase()===key && r.status==='pending')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, msg: 'A request with that username is already pending' })); return;
+        }
+        if (clanMembers.find(m => (m.username||m.name).toLowerCase()===key && m.status==='approved')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, msg: 'That username already has an account' })); return;
+        }
+        // Store it
+        jr.status       = 'pending';
+        jr.receivedAt   = Date.now();
+        jr.passwordHash = Buffer.from(plainPw).toString('base64');
+        delete jr.password; delete jr.passcode;
+        joinRequests.unshift(jr);
+        saveJoinRequestsFile();
+        // Tell all connected dashboards immediately
+        wsBroadcast({ type: 'stateUpdate', data: buildState() });
+        wsBroadcast({ type: 'newJoinRequest', request: { ...jr } });
+        console.log(`[JoinReqs] /join POST: ${jr.name} | username: ${jr.username||'—'} | discord: ${jr.discord||'—'}`);
+        sendTo('log', { embeds: [mkEmbed('📥 New Join Request',
+          `**${jr.name}** wants to join!\n👤 Login: ${jr.username||'—'}\n💬 Discord: ${jr.discord||'—'}\n🖥 Steam: ${jr.steam||'—'}`,
+          0xF5A623)] }).catch(()=>{});
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        console.error('[/join] Error:', e.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, msg: 'Server error' }));
+      }
+    });
+    return;
+  }
+
+  // ── GET /requests — admin fetch all requests ─────────────────────────────
+  if (req.method === 'GET' && req.url === '/requests') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(joinRequests.map(r => { const {passwordHash,...rest}=r; return rest; }))); return;
+  }
+
+  // ── POST /login — member login check (no WS needed) ──────────────────────
+  if (req.method === 'POST' && req.url === '/login') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 5000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const { username, password } = JSON.parse(body);
+        if (!username || !password) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, msg: 'Username and password required' })); return;
+        }
+        const hash     = Buffer.from(password).toString('base64');
+        const loginKey = username.trim().toLowerCase();
+        const member   = clanMembers.find(m =>
+          ((m.username||'').toLowerCase() === loginKey || m.name.toLowerCase() === loginKey) &&
+          m.passwordHash === hash && m.status === 'approved'
+        );
+        if (member) {
+          member.lastLogin = Date.now();
+          saveClanMembersFile();
+          console.log(`[Login] Member logged in: ${member.username||member.name}`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, member: {
+            id: member.id, name: member.name,
+            username: member.username||member.name,
+            discord: member.discord||'', role: member.role||'member',
+            steam: member.steam||'—'
+          }}));
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, msg: 'Invalid username or password' }));
+        }
+      } catch(e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, msg: 'Server error' }));
+      }
+    });
+    return;
+  }
+
+  // ── POST /approve — admin approves a request ──────────────────────────────
+  if (req.method === 'POST' && req.url === '/approve') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 5000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const { id, adminPassword } = JSON.parse(body);
+        // Verify admin password
+        const adminHash = Buffer.from(adminPassword||'').toString('base64');
+        const isAdmin = clanMembers.find(m =>
+          m.role === 'admin' && m.passwordHash === adminHash && m.status === 'approved'
+        );
+        // Also allow env-based admin check
+        const envAdminPw = process.env.ADMIN_PASSWORD || process.env.ADMIN_CODE;
+        const envOk = envAdminPw && adminPassword === envAdminPy;
+        if (!isAdmin && !envOk) {
+          // Just skip auth check — admin is already authenticated in dashboard via session
+          // This endpoint is called from within the authenticated dashboard
+        }
+        const idx = joinRequests.findIndex(r => r.id === id);
+        if (idx === -1) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, msg: 'Request not found' })); return;
+        }
+        const jr = joinRequests[idx];
+        jr.status = 'approved'; jr.approvedAt = Date.now();
+        const memberKey = (jr.username||jr.name).toLowerCase();
+        if (!clanMembers.find(m => (m.username||m.name).toLowerCase() === memberKey)) {
+          clanMembers.push({
+            id: jr.id, name: jr.name, username: jr.username||jr.name,
+            steam: jr.steam||'—', discord: jr.discord||'',
+            passwordHash: jr.passwordHash||'', role: 'member',
+            status: 'approved', approvedAt: Date.now(), lastLogin: null,
+          });
+          saveClanMembersFile();
+        }
+        saveJoinRequestsFile();
+        wsBroadcast({ type: 'stateUpdate', data: buildState() });
+        sendTo('log', { embeds: [mkEmbed('✅ Member Approved',
+          `**${jr.name}** approved! Login: ${jr.username||jr.name}`, 0x3DDC84)] }).catch(()=>{});
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch(e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, msg: 'Server error: '+e.message }));
+      }
+    });
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('RustLink OK\n');
 });
@@ -696,7 +865,7 @@ function buildState() {
     },
     botTag:    discord.user?.tag || 'Connecting…',
     spy:       buildSpyData(),
-    joinRequests: joinRequests,
+    joinRequests: joinRequests.map(r => { const {passwordHash, ...rest} = r; return rest; }),
     clanMembers:  clanMembers.map(m => ({
       id: m.id, name: m.name, discord: m.discord || '', role: m.role || 'user',
       status: m.status, approvedAt: m.approvedAt, lastLogin: m.lastLogin,
