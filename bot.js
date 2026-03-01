@@ -269,6 +269,30 @@ function fetchBMPlayers() {
           }
         });
         console.log(`[BM] Updated ${players.length} server players`);
+
+        // Also update watchedPlayers for anyone watched via BM ID
+        watchedPlayers.forEach((wp, key) => {
+          if (!key.startsWith('bm_')) return;
+          const nowOnline = onlineIds.has(key);
+          const wasOnline = wp.online;
+          wp.online = nowOnline;
+          if (!wasOnline && nowOnline) {
+            wp.currentSessionStart = Date.now();
+            console.log(`[Spy/BM] ${wp.name} ONLINE`);
+            wsBroadcast({ type: 'spyEvent', steamId: key, name: wp.name, event: 'online' });
+            pushAlert({ type: 'spy', icon: '👁', title: `${wp.name} is ONLINE`, detail: 'Watched player came online' });
+          } else if (wasOnline && !nowOnline) {
+            if (wp.currentSessionStart) {
+              const ms = Date.now() - wp.currentSessionStart;
+              wp.sessions.push({ start: wp.currentSessionStart, end: Date.now(), ms });
+              wp.totalMs += ms;
+              wp.currentSessionStart = null;
+            }
+            console.log(`[Spy/BM] ${wp.name} OFFLINE`);
+            wsBroadcast({ type: 'spyEvent', steamId: key, name: wp.name, event: 'offline' });
+          }
+        });
+
         pushState();
       } catch(e) { console.warn('[BM] Parse error:', e.message); }
     });
@@ -358,7 +382,19 @@ async function handleDashMsg(ws, msg) {
     case 'addSpy': {
       const r = addWatch(msg.steamId, msg.name || 'Unknown');
       send(ws, { type: 'spyResult', ok: r.ok, msg: r.msg });
-      if (r.ok) pushState();
+      if (r.ok) {
+        // Immediately sync online status from allServerPlayers so it doesn't show offline
+        const key = steamIdStr(msg.steamId);
+        if (allServerPlayers.has(key)) {
+          const sp = allServerPlayers.get(key);
+          const wp = watchedPlayers.get(key);
+          if (wp && sp.online) {
+            wp.online = true;
+            wp.currentSessionStart = Date.now();
+          }
+        }
+        pushState();
+      }
       break;
     }
 
