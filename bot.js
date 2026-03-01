@@ -151,6 +151,47 @@ if (process.env.ALARMS) {
 const watchedPlayers   = new Map();
 const allServerPlayers = new Map(); // steamId → { name, online }
 
+const WATCHED_FILE = './watched_players.json';
+
+function saveWatchedPlayers() {
+  try {
+    const arr = [];
+    watchedPlayers.forEach((wp) => {
+      // Finalise any open session before saving so time is not lost
+      const entry = { ...wp };
+      if (entry.currentSessionStart) {
+        const ms = Date.now() - entry.currentSessionStart;
+        entry.sessions = [...(entry.sessions || []), { start: entry.currentSessionStart, end: Date.now(), ms }];
+        entry.totalMs  = (entry.totalMs || 0) + ms;
+        // Keep currentSessionStart so we resume it after a quick restart
+      }
+      arr.push(entry);
+    });
+    fs.writeFileSync(WATCHED_FILE, JSON.stringify(arr, null, 2));
+  } catch(e) { console.warn('[Spy] Save error:', e.message); }
+}
+
+function loadWatchedPlayers() {
+  try {
+    if (!fs.existsSync(WATCHED_FILE)) return;
+    const arr = JSON.parse(fs.readFileSync(WATCHED_FILE, 'utf8'));
+    arr.forEach(wp => {
+      if (!wp.steamId) return;
+      watchedPlayers.set(wp.steamId, {
+        steamId:             wp.steamId,
+        name:                wp.name || 'Unknown',
+        addedAt:             wp.addedAt || Date.now(),
+        online:              false, // will be updated on next team/BM refresh
+        totalMs:             wp.totalMs || 0,
+        currentSessionStart: null,  // reset — bot may have been offline for unknown time
+        sessions:            wp.sessions || [],
+      });
+    });
+    console.log(`[Spy] Loaded ${watchedPlayers.size} watched players from disk`);
+  } catch(e) { console.warn('[Spy] Load error:', e.message); }
+}
+loadWatchedPlayers();
+
 function steamIdStr(raw) {
   if (!raw) return '';
   if (typeof raw === 'string') return raw;
@@ -164,11 +205,13 @@ function addWatch(steamId, name) {
   if (watchedPlayers.has(key)) return { ok: false, msg: `Already watching ${name}` };
   watchedPlayers.set(key, { steamId: key, name, addedAt: Date.now(), online: false, totalMs: 0, currentSessionStart: null, sessions: [] });
   console.log(`[Spy] Watching: ${name} (${key})`);
+  saveWatchedPlayers();
   return { ok: true };
 }
 
 function removeWatch(steamId) {
   watchedPlayers.delete(steamIdStr(steamId));
+  saveWatchedPlayers();
 }
 
 function updateSpyFromTeam(members) {
@@ -189,6 +232,7 @@ function updateSpyFromTeam(members) {
       console.log(`[Spy] ${wp.name} ONLINE`);
       wsBroadcast({ type: 'spyEvent', steamId: key, name: wp.name, event: 'online' });
       pushAlert({ type: 'spy', icon: '👁', title: `${wp.name} is ONLINE`, detail: 'Watched player came online' });
+      saveWatchedPlayers();
     } else if (wasOnline && !nowOnline) {
       if (wp.currentSessionStart) {
         const ms = Date.now() - wp.currentSessionStart;
@@ -199,6 +243,7 @@ function updateSpyFromTeam(members) {
       console.log(`[Spy] ${wp.name} OFFLINE`);
       wsBroadcast({ type: 'spyEvent', steamId: key, name: wp.name, event: 'offline' });
       pushAlert({ type: 'spy', icon: '👁', title: `${wp.name} went OFFLINE`, detail: '' });
+      saveWatchedPlayers();
     }
   });
 }
@@ -914,6 +959,9 @@ async function refreshTeam() {
 
 // Heartbeat — keeps dashboard fresh every 15 seconds
 setInterval(() => { if (rustConnected) pushState(); }, 15000);
+
+// Persist watched-player time data every 5 minutes so session totals survive restarts
+setInterval(() => { if (watchedPlayers.size > 0) saveWatchedPlayers(); }, 300000);
 
 // ─── SLASH COMMANDS ───────────────────────────────────────────────────────────
 const CMDS = [
