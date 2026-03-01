@@ -645,7 +645,27 @@ function buildState() {
     players:       serverInfo.players       || 0,
     maxPlayers:    serverInfo.maxPlayers    || 0,
     queuedPlayers: serverInfo.queuedPlayers || 0,
-    gameTime:      serverInfo.time          || '—',
+    gameTime:      (() => {
+      const t = serverInfo.time;
+      if (t === undefined || t === null) return '—';
+      // Rust+ returns time as a float (e.g. 14.5 = 14:30) OR occasionally "HH:MM" string
+      if (typeof t === 'number') {
+        const h = Math.floor(t);
+        const m = Math.round((t - h) * 60);
+        return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+      }
+      // Already a string — normalise to "HH:MM"
+      const str = String(t).trim();
+      if (str.includes(':')) return str;
+      // Plain numeric string
+      const n = parseFloat(str);
+      if (!isNaN(n)) {
+        const h = Math.floor(n);
+        const m = Math.round((n - h) * 60);
+        return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+      }
+      return '—';
+    })(),
     team,
     switches,
     alarms,
@@ -1026,8 +1046,13 @@ async function refreshTeam() {
   return teamInfo;
 }
 
-// Heartbeat — keeps dashboard fresh every 15 seconds
-setInterval(() => { if (rustConnected) pushState(); }, 15000);
+// Heartbeat — refreshes server data and pushes state every 30 seconds
+// (pop tracker handles the 60s full refresh; this keeps game time + player count current between those)
+setInterval(async () => {
+  if (!rustConnected) return;
+  try { await refreshServer(); } catch {}
+  pushState();
+}, 30000);
 
 // Persist watched-player time data every 5 minutes so session totals survive restarts
 setInterval(() => { if (watchedPlayers.size > 0) saveWatchedPlayers(); }, 300000);
