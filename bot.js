@@ -440,7 +440,11 @@ async function handleDashMsg(ws, msg) {
       send(ws, { type:'joinRequestResult', ok:true });
       // Broadcast updated state to ALL connected dashboards (admins will see it instantly)
       wsBroadcast({ type:'stateUpdate', data:buildState() });
+      // Also broadcast a dedicated joinRequest event so admin panels refresh immediately
+      wsBroadcast({ type:'newJoinRequest', request: { id: req.id, name: req.name, status: 'pending', submittedAt: req.submittedAt || Date.now() } });
       console.log(`[JoinReqs] New request: ${req.name}`);
+      // Send Discord notification to log channel
+      sendTo('log', { embeds: [mkEmbed('📥 New Join Request', `**${req.name}** wants to join the clan!\nCheck the dashboard to approve or deny.`, 0xF5A623)] });
       break;
     }
 
