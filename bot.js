@@ -319,6 +319,49 @@ async function handleDashMsg(ws, msg) {
     case 'requestState':
       send(ws, { type: 'fullState', data: buildState() });
       break;
+
+    case 'voiceJoin': {
+      const chId = msg.channelId;
+      if (!chId) { send(ws, { type:'error', message:'No channel ID provided' }); break; }
+      // Update config and join
+      C.voice.channelId = chId;
+      ensureVoice().then(conn => {
+        if (conn) {
+          send(ws, { type:'voiceJoined', channelId:chId });
+          console.log('[Voice] Dashboard joined channel:', chId);
+        } else {
+          send(ws, { type:'error', message:'Failed to join voice channel — check DISCORD_GUILD_ID and channel ID' });
+        }
+      }).catch(e => send(ws, { type:'error', message:'Voice join error: '+e.message }));
+      break;
+    }
+
+    case 'voiceLeave': {
+      if (voiceConn) { try { voiceConn.destroy(); } catch{} voiceConn = null; }
+      send(ws, { type:'voiceLeft' });
+      console.log('[Voice] Dashboard left channel');
+      break;
+    }
+
+    case 'testTTS': {
+      const text = msg.text || 'This is a test of RustLink voice alerts.';
+      speakTTS(text);
+      send(ws, { type:'info', message:'TTS playing: '+text.slice(0,40) });
+      break;
+    }
+
+    case 'kickMember': {
+      const name = msg.name || 'player';
+      try {
+        // Send !kick command via team chat (works if bot is team leader)
+        await rustplus.sendTeamMessage(`/kick ${msg.steamId}`);
+        send(ws, { type:'info', message:`Kick command sent for ${name}` });
+        pushAlert({ type:'info', icon:'⊘', title:`${name} kicked`, detail:'Admin kicked from team' });
+      } catch(e) {
+        send(ws, { type:'error', message:'Kick failed: '+e.message });
+      }
+      break;
+    }
   }
 }
 
