@@ -305,6 +305,24 @@ function startBMPolling() {
   setInterval(fetchBMPlayers, 120000);
 }
 
+// ─── JOIN REQUESTS STORE (server-side) ───────────────────────────────────────
+// Stored in memory + file so all dashboards share the same data
+const JOIN_REQS_FILE = './join_requests.json';
+let joinRequests = [];
+function loadJoinRequests() {
+  try {
+    if (fs.existsSync(JOIN_REQS_FILE)) {
+      joinRequests = JSON.parse(fs.readFileSync(JOIN_REQS_FILE, 'utf8'));
+      console.log(`[JoinReqs] Loaded ${joinRequests.length} requests`);
+    }
+  } catch(e) { joinRequests = []; }
+}
+function saveJoinRequestsFile() {
+  try { fs.writeFileSync(JOIN_REQS_FILE, JSON.stringify(joinRequests, null, 2)); }
+  catch(e) { console.warn('[JoinReqs] Save error:', e.message); }
+}
+loadJoinRequests();
+
 // ─── RUNTIME STATE ───────────────────────────────────────────────────────────
 let rustplus      = null;
 let rustConnected = false;
@@ -408,6 +426,43 @@ async function handleDashMsg(ws, msg) {
       send(ws, { type: 'fullState', data: buildState() });
       break;
 
+    case 'submitJoinRequest': {
+      // A visitor submitted a join request from the login screen
+      const req = msg.request;
+      if (!req || !req.id || !req.name) { send(ws, { type:'error', message:'Invalid join request' }); break; }
+      // Prevent duplicate pending requests by same name
+      const existingPending = joinRequests.find(r => r.name.toLowerCase() === req.name.toLowerCase() && r.status === 'pending');
+      if (existingPending) { send(ws, { type:'joinRequestResult', ok:false, msg:'Request already pending for this name' }); break; }
+      req.status     = req.status || 'pending';
+      req.receivedAt = Date.now();
+      joinRequests.unshift(req);
+      saveJoinRequestsFile();
+      send(ws, { type:'joinRequestResult', ok:true });
+      // Broadcast updated state to ALL connected dashboards (admins will see it instantly)
+      wsBroadcast({ type:'stateUpdate', data:buildState() });
+      console.log(`[JoinReqs] New request: ${req.name}`);
+      break;
+    }
+
+    case 'updateJoinRequest': {
+      // Admin approved/denied/deleted a request
+      const { id, action } = msg;
+      const idx = joinRequests.findIndex(r => r.id === id);
+      if (idx === -1) { send(ws, { type:'error', message:'Request not found' }); break; }
+      if (action === 'approve') {
+        joinRequests[idx].status = 'approved';
+        joinRequests[idx].approvedAt = Date.now();
+      } else if (action === 'deny') {
+        joinRequests[idx].status = 'denied';
+        joinRequests[idx].deniedAt = Date.now();
+      } else if (action === 'delete') {
+        joinRequests.splice(idx, 1);
+      }
+      saveJoinRequestsFile();
+      wsBroadcast({ type:'stateUpdate', data:buildState() });
+      break;
+    }
+
     case 'voiceJoin': {
       const chId = msg.channelId;
       if (!chId) { send(ws, { type:'error', message:'No channel ID provided' }); break; }
@@ -493,6 +548,7 @@ function buildState() {
     },
     botTag:    discord.user?.tag || 'Connecting…',
     spy:       buildSpyData(),
+    joinRequests: joinRequests,
     lastUpdate: Date.now(),
   };
 }
