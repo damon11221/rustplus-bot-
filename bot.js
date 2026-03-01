@@ -66,7 +66,8 @@ const {
 const RustPlus  = require('@liamcottle/rustplus.js');
 const { execSync } = require('child_process');
 const fs   = require('fs');
-const http = require('http');
+const http  = require('http');
+const https = require('https');
 const WSLib = require('ws');
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ const C = {
   },
   wipeDate: process.env.WIPE_DATE ? new Date(process.env.WIPE_DATE) : null,
   wsPort:   parseInt(process.env.PORT) || 3000,
+  bmServerId: process.env.BM_SERVER_ID || '1720719', // BattleMetrics server ID
 };
 
 // ─── ROLE RULES ───────────────────────────────────────────────────────────────
@@ -229,6 +231,56 @@ function buildSpyData() {
   return { watched, allPlayers };
 }
 
+
+// ─── BATTLEMETRICS PLAYER FETCH ──────────────────────────────────────────────
+// Fetches all currently online players from BattleMetrics public API
+// No auth needed — basic player list is public
+function fetchBMPlayers() {
+  if (!C.bmServerId) return;
+  const url = `https://api.battlemetrics.com/servers/${C.bmServerId}?include=player&fields[server]=name,players,maxPlayers,status&fields[player]=name`;
+  https.get(url, { headers: { 'User-Agent': 'RustLink-Bot/2.0' } }, (res) => {
+    let raw = '';
+    res.on('data', d => raw += d);
+    res.on('end', () => {
+      try {
+        const data = JSON.parse(raw);
+        const included = data.included || [];
+        const players  = included.filter(x => x.type === 'player');
+        // Merge into allServerPlayers — keep existing watched data
+        // First mark all as offline, then set online ones from BM
+        const onlineIds = new Set();
+        players.forEach(p => {
+          const name = p.attributes?.name || 'Unknown';
+          const id   = p.id || '';
+          // BM player IDs are not Steam IDs — use name as key for display
+          const key  = 'bm_' + id;
+          onlineIds.add(key);
+          if (!allServerPlayers.has(key)) {
+            allServerPlayers.set(key, { name, online: true, fromBM: true });
+          } else {
+            allServerPlayers.get(key).online = true;
+            allServerPlayers.get(key).name   = name;
+          }
+        });
+        // Mark players not in current list as offline
+        allServerPlayers.forEach((p, key) => {
+          if (key.startsWith('bm_') && !onlineIds.has(key)) {
+            p.online = false;
+          }
+        });
+        console.log(`[BM] Updated ${players.length} server players`);
+        pushState();
+      } catch(e) { console.warn('[BM] Parse error:', e.message); }
+    });
+  }).on('error', e => console.warn('[BM] Fetch error:', e.message));
+}
+
+// Poll BattleMetrics every 2 minutes
+function startBMPolling() {
+  fetchBMPlayers(); // immediate first fetch
+  setInterval(fetchBMPlayers, 120000);
+}
+
 // ─── RUNTIME STATE ───────────────────────────────────────────────────────────
 let rustplus      = null;
 let rustConnected = false;
@@ -323,43 +375,31 @@ async function handleDashMsg(ws, msg) {
     case 'voiceJoin': {
       const chId = msg.channelId;
       if (!chId) { send(ws, { type:'error', message:'No channel ID provided' }); break; }
-      // Update config and join
       C.voice.channelId = chId;
       ensureVoice().then(conn => {
-        if (conn) {
-          send(ws, { type:'voiceJoined', channelId:chId });
-          console.log('[Voice] Dashboard joined channel:', chId);
-        } else {
-          send(ws, { type:'error', message:'Failed to join voice channel — check DISCORD_GUILD_ID and channel ID' });
-        }
-      }).catch(e => send(ws, { type:'error', message:'Voice join error: '+e.message }));
+        if (conn) { send(ws, { type:'voiceJoined', channelId:chId }); console.log('[Voice] Joined:', chId); }
+        else send(ws, { type:'error', message:'Failed to join voice — check DISCORD_GUILD_ID and channel ID' });
+      }).catch(e => send(ws, { type:'error', message:'Voice error: '+e.message }));
       break;
     }
 
     case 'voiceLeave': {
       if (voiceConn) { try { voiceConn.destroy(); } catch{} voiceConn = null; }
       send(ws, { type:'voiceLeft' });
-      console.log('[Voice] Dashboard left channel');
       break;
     }
 
     case 'testTTS': {
-      const text = msg.text || 'This is a test of RustLink voice alerts.';
-      speakTTS(text);
-      send(ws, { type:'info', message:'TTS playing: '+text.slice(0,40) });
+      speakTTS(msg.text || 'This is a test of RustLink voice alerts.');
       break;
     }
 
     case 'kickMember': {
-      const name = msg.name || 'player';
+      if (!rustConnected) { send(ws, { type:'error', message:'Not connected to Rust+' }); break; }
       try {
-        // Send !kick command via team chat (works if bot is team leader)
-        await rustplus.sendTeamMessage(`/kick ${msg.steamId}`);
-        send(ws, { type:'info', message:`Kick command sent for ${name}` });
-        pushAlert({ type:'info', icon:'⊘', title:`${name} kicked`, detail:'Admin kicked from team' });
-      } catch(e) {
-        send(ws, { type:'error', message:'Kick failed: '+e.message });
-      }
+        await rustplus.sendTeamMessage(`/kick ${msg.steamId || ''}`);
+        pushAlert({ type:'info', icon:'⊘', title:`Kicked: ${msg.name||'player'}`, detail:'Admin action' });
+      } catch(e) { send(ws, { type:'error', message:'Kick failed: '+e.message }); }
       break;
     }
   }
@@ -519,6 +559,7 @@ function startRustClient() {
     sendTo('log', { embeds: [mkEmbed('🔗 Connected', `Monitoring **${serverInfo.name || C.rust.ip}**`, 0x3DDC84)] });
     startPop();
     scheduleWipeReminders();
+    startBMPolling();
     try { await updatePanel(); } catch {}
     pushAlert({ type: 'info', icon: '🔗', title: 'Bot Connected', detail: serverInfo.name || C.rust.ip });
     pushState();
