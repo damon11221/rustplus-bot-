@@ -492,25 +492,35 @@ async function handleDashMsg(ws, msg) {
     case 'submitJoinRequest': {
       const req = msg.request;
       if (!req || !req.id || !req.name) { send(ws, { type:'error', message:'Invalid join request' }); break; }
-      if (!req.password) { send(ws, { type:'error', message:'Password required' }); break; }
-      // Prevent duplicate pending requests by same name
-      const existingPending = joinRequests.find(r => r.name.toLowerCase() === req.name.toLowerCase() && r.status === 'pending');
-      if (existingPending) { send(ws, { type:'joinRequestResult', ok:false, msg:'A request for that name is already pending' }); break; }
-      // Prevent duplicate if name already an active member
-      const existingMember = clanMembers.find(m => m.name.toLowerCase() === req.name.toLowerCase() && m.status === 'approved');
-      if (existingMember) { send(ws, { type:'joinRequestResult', ok:false, msg:'That name already has an account' }); break; }
+      // Accept either 'password' or 'passcode' field from the frontend
+      const plainPw = req.password || req.passcode;
+      if (!plainPw) { send(ws, { type:'error', message:'Password/passcode required' }); break; }
+      // Prevent duplicate by username OR name
+      const dupeKey = (req.username || req.name).toLowerCase();
+      const existingPending = joinRequests.find(r =>
+        (r.username||r.name).toLowerCase() === dupeKey && r.status === 'pending'
+      );
+      if (existingPending) { send(ws, { type:'joinRequestResult', ok:false, msg:'A request for that username is already pending' }); break; }
+      const existingMember = clanMembers.find(m =>
+        (m.username||m.name).toLowerCase() === dupeKey && m.status === 'approved'
+      );
+      if (existingMember) { send(ws, { type:'joinRequestResult', ok:false, msg:'That username already has an account' }); break; }
       req.status     = 'pending';
       req.receivedAt = Date.now();
-      // Store password hash (simple — not security critical, just access control)
-      req.passwordHash = Buffer.from(req.password).toString('base64');
-      delete req.password; // don't keep plaintext in memory longer than needed
+      // Store password hash
+      req.passwordHash = Buffer.from(plainPw).toString('base64');
+      delete req.password;
+      delete req.passcode;
       joinRequests.unshift(req);
       saveJoinRequestsFile();
       send(ws, { type:'joinRequestResult', ok:true });
+      // Broadcast full state so ALL connected dashboards update immediately
       wsBroadcast({ type:'stateUpdate', data:buildState() });
-      wsBroadcast({ type:'newJoinRequest', request: { id: req.id, name: req.name, discord: req.discord||'', status: 'pending', submittedAt: req.submittedAt || Date.now() } });
-      console.log(`[JoinReqs] New request: ${req.name} (Discord: ${req.discord||'—'})`);
-      sendTo('log', { embeds: [mkEmbed('📥 New Join Request', `**${req.name}** wants to join!\nDiscord: ${req.discord||'—'}\nCheck the dashboard to approve or deny.`, 0xF5A623)] });
+      wsBroadcast({ type:'newJoinRequest', request: { ...req } });
+      console.log(`[JoinReqs] New request: ${req.name} | Username: ${req.username||'—'} | Discord: ${req.discord||'—'} | Steam: ${req.steam||'—'}`);
+      sendTo('log', { embeds: [mkEmbed('📥 New Join Request',
+        `**${req.name}** wants to join!\n👤 Login: ${req.username||'—'}\n💬 Discord: ${req.discord||'—'}\n🖥 Steam: ${req.steam||'—'}\n\nCheck the dashboard to approve or deny.`,
+        0xF5A623)] }).catch(()=>{});
       break;
     }
 
@@ -522,22 +532,25 @@ async function handleDashMsg(ws, msg) {
         const req = joinRequests[idx];
         req.status     = 'approved';
         req.approvedAt = Date.now();
-        // Create the clan member account — password already stored as base64 hash on req
-        if (!clanMembers.find(m => m.id === req.id)) {
+        // Create the clan member account
+        const memberKey = (req.username || req.name).toLowerCase();
+        if (!clanMembers.find(m => (m.username||m.name).toLowerCase() === memberKey)) {
           clanMembers.push({
             id:           req.id,
             name:         req.name,
+            username:     req.username || req.name,
+            steam:        req.steam || '—',
             discord:      req.discord || '',
             passwordHash: req.passwordHash || '',
-            role:         'user',
+            role:         'member',
             status:       'approved',
             approvedAt:   Date.now(),
             lastLogin:    null,
             info:         req.info || {},
           });
           saveClanMembersFile();
-          console.log(`[Members] Activated account for ${req.name}`);
-          sendTo('log', { embeds: [mkEmbed('✅ Member Approved', `**${req.name}** has been approved and can now log in.`, 0x3DDC84)] });
+          console.log(`[Members] Activated account for ${req.name} (login: ${req.username||req.name})`);
+          sendTo('log', { embeds: [mkEmbed('✅ Member Approved', `**${req.name}** approved!\n👤 Login username: ${req.username||req.name}`, 0x3DDC84)] }).catch(()=>{});
         }
       } else if (action === 'deny') {
         joinRequests[idx].status = 'denied';
@@ -556,22 +569,24 @@ async function handleDashMsg(ws, msg) {
     }
 
     case 'memberLogin': {
-      // A member is trying to log in from the lockscreen — check credentials
+      // A member is trying to log in — check credentials by username OR name
       const { name, password } = msg;
       if (!name || !password) { send(ws, { type:'memberLoginResult', ok:false, msg:'Name and password required' }); break; }
       const hash = Buffer.from(password).toString('base64');
+      const loginKey = name.trim().toLowerCase();
       const member = clanMembers.find(m =>
-        m.name.toLowerCase() === name.trim().toLowerCase() &&
+        // Check username field first, then fall back to name
+        ((m.username||'').toLowerCase() === loginKey || m.name.toLowerCase() === loginKey) &&
         m.passwordHash === hash &&
         m.status === 'approved'
       );
       if (member) {
         member.lastLogin = Date.now();
         saveClanMembersFile();
-        send(ws, { type:'memberLoginResult', ok:true, member: { id: member.id, name: member.name, discord: member.discord, role: member.role } });
-        console.log(`[Members] Login: ${member.name}`);
+        send(ws, { type:'memberLoginResult', ok:true, member: { id: member.id, name: member.name, username: member.username||member.name, discord: member.discord, role: member.role } });
+        console.log(`[Members] Login: ${member.username||member.name}`);
       } else {
-        send(ws, { type:'memberLoginResult', ok:false, msg:'Invalid name or password' });
+        send(ws, { type:'memberLoginResult', ok:false, msg:'Invalid username or password' });
       }
       break;
     }
