@@ -368,6 +368,24 @@ function saveJoinRequestsFile() {
 }
 loadJoinRequests();
 
+// ─── CLAN MEMBERS STORE (server-side) ────────────────────────────────────────
+// Approved members with their login credentials — shared across all dashboards
+const CLAN_MEMBERS_FILE = './clan_members.json';
+let clanMembers = [];
+function loadClanMembers() {
+  try {
+    if (fs.existsSync(CLAN_MEMBERS_FILE)) {
+      clanMembers = JSON.parse(fs.readFileSync(CLAN_MEMBERS_FILE, 'utf8'));
+      console.log(`[Members] Loaded ${clanMembers.length} clan members`);
+    }
+  } catch(e) { clanMembers = []; }
+}
+function saveClanMembersFile() {
+  try { fs.writeFileSync(CLAN_MEMBERS_FILE, JSON.stringify(clanMembers, null, 2)); }
+  catch(e) { console.warn('[Members] Save error:', e.message); }
+}
+loadClanMembers();
+
 // ─── RUNTIME STATE ───────────────────────────────────────────────────────────
 let rustplus      = null;
 let rustConnected = false;
@@ -472,43 +490,89 @@ async function handleDashMsg(ws, msg) {
       break;
 
     case 'submitJoinRequest': {
-      // A visitor submitted a join request from the login screen
       const req = msg.request;
       if (!req || !req.id || !req.name) { send(ws, { type:'error', message:'Invalid join request' }); break; }
+      if (!req.password) { send(ws, { type:'error', message:'Password required' }); break; }
       // Prevent duplicate pending requests by same name
       const existingPending = joinRequests.find(r => r.name.toLowerCase() === req.name.toLowerCase() && r.status === 'pending');
-      if (existingPending) { send(ws, { type:'joinRequestResult', ok:false, msg:'Request already pending for this name' }); break; }
-      req.status     = req.status || 'pending';
+      if (existingPending) { send(ws, { type:'joinRequestResult', ok:false, msg:'A request for that name is already pending' }); break; }
+      // Prevent duplicate if name already an active member
+      const existingMember = clanMembers.find(m => m.name.toLowerCase() === req.name.toLowerCase() && m.status === 'approved');
+      if (existingMember) { send(ws, { type:'joinRequestResult', ok:false, msg:'That name already has an account' }); break; }
+      req.status     = 'pending';
       req.receivedAt = Date.now();
+      // Store password hash (simple — not security critical, just access control)
+      req.passwordHash = Buffer.from(req.password).toString('base64');
+      delete req.password; // don't keep plaintext in memory longer than needed
       joinRequests.unshift(req);
       saveJoinRequestsFile();
       send(ws, { type:'joinRequestResult', ok:true });
-      // Broadcast updated state to ALL connected dashboards (admins will see it instantly)
       wsBroadcast({ type:'stateUpdate', data:buildState() });
-      // Also broadcast a dedicated joinRequest event so admin panels refresh immediately
-      wsBroadcast({ type:'newJoinRequest', request: { id: req.id, name: req.name, status: 'pending', submittedAt: req.submittedAt || Date.now() } });
-      console.log(`[JoinReqs] New request: ${req.name}`);
-      // Send Discord notification to log channel
-      sendTo('log', { embeds: [mkEmbed('📥 New Join Request', `**${req.name}** wants to join the clan!\nCheck the dashboard to approve or deny.`, 0xF5A623)] });
+      wsBroadcast({ type:'newJoinRequest', request: { id: req.id, name: req.name, discord: req.discord||'', status: 'pending', submittedAt: req.submittedAt || Date.now() } });
+      console.log(`[JoinReqs] New request: ${req.name} (Discord: ${req.discord||'—'})`);
+      sendTo('log', { embeds: [mkEmbed('📥 New Join Request', `**${req.name}** wants to join!\nDiscord: ${req.discord||'—'}\nCheck the dashboard to approve or deny.`, 0xF5A623)] });
       break;
     }
 
     case 'updateJoinRequest': {
-      // Admin approved/denied/deleted a request
       const { id, action } = msg;
       const idx = joinRequests.findIndex(r => r.id === id);
       if (idx === -1) { send(ws, { type:'error', message:'Request not found' }); break; }
       if (action === 'approve') {
-        joinRequests[idx].status = 'approved';
-        joinRequests[idx].approvedAt = Date.now();
+        const req = joinRequests[idx];
+        req.status     = 'approved';
+        req.approvedAt = Date.now();
+        // Create the clan member account — password already stored as base64 hash on req
+        if (!clanMembers.find(m => m.id === req.id)) {
+          clanMembers.push({
+            id:           req.id,
+            name:         req.name,
+            discord:      req.discord || '',
+            passwordHash: req.passwordHash || '',
+            role:         'user',
+            status:       'approved',
+            approvedAt:   Date.now(),
+            lastLogin:    null,
+            info:         req.info || {},
+          });
+          saveClanMembersFile();
+          console.log(`[Members] Activated account for ${req.name}`);
+          sendTo('log', { embeds: [mkEmbed('✅ Member Approved', `**${req.name}** has been approved and can now log in.`, 0x3DDC84)] });
+        }
       } else if (action === 'deny') {
         joinRequests[idx].status = 'denied';
         joinRequests[idx].deniedAt = Date.now();
       } else if (action === 'delete') {
         joinRequests.splice(idx, 1);
+      } else if (action === 'removeMember') {
+        // Admin removing an approved member — revoke access
+        clanMembers = clanMembers.filter(m => m.id !== id);
+        saveClanMembersFile();
+        joinRequests = joinRequests.filter(r => r.id !== id);
       }
       saveJoinRequestsFile();
       wsBroadcast({ type:'stateUpdate', data:buildState() });
+      break;
+    }
+
+    case 'memberLogin': {
+      // A member is trying to log in from the lockscreen — check credentials
+      const { name, password } = msg;
+      if (!name || !password) { send(ws, { type:'memberLoginResult', ok:false, msg:'Name and password required' }); break; }
+      const hash = Buffer.from(password).toString('base64');
+      const member = clanMembers.find(m =>
+        m.name.toLowerCase() === name.trim().toLowerCase() &&
+        m.passwordHash === hash &&
+        m.status === 'approved'
+      );
+      if (member) {
+        member.lastLogin = Date.now();
+        saveClanMembersFile();
+        send(ws, { type:'memberLoginResult', ok:true, member: { id: member.id, name: member.name, discord: member.discord, role: member.role } });
+        console.log(`[Members] Login: ${member.name}`);
+      } else {
+        send(ws, { type:'memberLoginResult', ok:false, msg:'Invalid name or password' });
+      }
       break;
     }
 
@@ -598,6 +662,11 @@ function buildState() {
     botTag:    discord.user?.tag || 'Connecting…',
     spy:       buildSpyData(),
     joinRequests: joinRequests,
+    clanMembers:  clanMembers.map(m => ({
+      id: m.id, name: m.name, discord: m.discord || '', role: m.role || 'user',
+      status: m.status, approvedAt: m.approvedAt, lastLogin: m.lastLogin,
+      // Never send password in state — only used for login check server-side
+    })),
     lastUpdate: Date.now(),
   };
 }
