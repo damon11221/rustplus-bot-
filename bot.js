@@ -983,9 +983,10 @@ function buildState() {
     spy:       buildSpyData(),
     joinRequests: joinRequests.map(r => { const {passwordHash, ...rest} = r; return rest; }),
     clanMembers:  clanMembers.map(m => ({
-      id: m.id, name: m.name, discord: m.discord || '', role: m.role || 'user',
-      status: m.status, approvedAt: m.approvedAt, lastLogin: m.lastLogin,
-      // Never send password in state — only used for login check server-side
+      id: m.id, name: m.name, username: m.username || m.name,
+      discord: m.discord || '', steam: m.steam || '—',
+      role: m.role || 'user', status: m.status,
+      approvedAt: m.approvedAt, lastLogin: m.lastLogin,
     })),
     lastUpdate: Date.now(),
   };
