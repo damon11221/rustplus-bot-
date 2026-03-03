@@ -586,6 +586,122 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
+  // ── GET /join-clan — self-contained join page (no files needed) ─────────
+  if (req.method === 'GET' && req.url === '/join-clan') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Join Clan — RUST LINK</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0a08;color:#e8e8e0;font-family:'Segoe UI',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{background:#141412;border:1px solid #2a2a24;border-radius:12px;padding:32px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  .title{font-size:22px;font-weight:700;color:#f5a623;letter-spacing:2px;margin-bottom:4px;text-align:center}
+  .sub{font-size:11px;color:#666;text-align:center;margin-bottom:24px;letter-spacing:1px}
+  .label{font-size:11px;color:#999;margin-bottom:4px;display:block;letter-spacing:.5px}
+  .inp{width:100%;background:#1a1a18;border:1px solid #333;border-radius:6px;padding:10px 12px;color:#e8e8e0;font-size:14px;outline:none;transition:border .2s}
+  .inp:focus{border-color:#f5a623}
+  .group{margin-bottom:14px}
+  .btn{width:100%;padding:12px;background:#ce422b;border:none;border-radius:6px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:8px;letter-spacing:1px;transition:background .2s}
+  .btn:hover{background:#e04830}
+  .btn:disabled{background:#444;cursor:not-allowed}
+  .err{color:#ff5a4a;font-size:12px;margin-top:8px;min-height:18px;text-align:center}
+  .ok{display:none;text-align:center;padding:20px 0}
+  .ok .big{font-size:48px;margin-bottom:12px}
+  .ok .msg{color:#3ddc84;font-size:16px;font-weight:600;margin-bottom:8px}
+  .ok .small{color:#888;font-size:12px;line-height:1.7}
+  .divider{border:none;border-top:1px solid #222;margin:16px 0}
+  .hint{font-size:10px;color:#555;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="title">⚔️ JOIN CLAN</div>
+  <div class="sub">// REQUEST MEMBERSHIP //</div>
+
+  <div id="form-area">
+    <div class="group">
+      <label class="label">RUST IN-GAME NAME</label>
+      <input class="inp" id="f-name" placeholder="e.g. xXSlayer99" maxlength="32" autocomplete="off">
+    </div>
+    <div class="group">
+      <label class="label">STEAM ID</label>
+      <input class="inp" id="f-steam" placeholder="76561198..." maxlength="20" autocomplete="off">
+    </div>
+    <div class="group">
+      <label class="label">DISCORD USERNAME</label>
+      <input class="inp" id="f-discord" placeholder="e.g. slayer99" maxlength="40" autocomplete="off">
+    </div>
+    <hr class="divider">
+    <div class="group">
+      <label class="label">CHOOSE A LOGIN USERNAME</label>
+      <input class="inp" id="f-user" placeholder="Used to log in after approval" maxlength="32" autocomplete="off">
+    </div>
+    <div class="group">
+      <label class="label">CHOOSE A PASSWORD</label>
+      <input class="inp" id="f-pass" type="password" placeholder="Min 4 characters" maxlength="32" autocomplete="new-password">
+      <div class="hint">Remember this — you'll need it to log in once approved.</div>
+    </div>
+    <div class="err" id="err"></div>
+    <button class="btn" id="btn" onclick="submit()">⚔️ SEND REQUEST</button>
+  </div>
+
+  <div class="ok" id="ok-area">
+    <div class="big">⏳</div>
+    <div class="msg">REQUEST SENT!</div>
+    <div class="small">Your request is with the Clan Admins.<br>Once approved, log in at:<br><br>
+      <a href="/" style="color:#f5a623;">rustplus-bot-production.up.railway.app</a>
+    </div>
+  </div>
+</div>
+<script>
+async function submit() {
+  const err = document.getElementById('err');
+  const name  = document.getElementById('f-name').value.trim();
+  const steam = document.getElementById('f-steam').value.trim() || '—';
+  const disc  = document.getElementById('f-discord').value.trim();
+  const user  = document.getElementById('f-user').value.trim();
+  const pass  = document.getElementById('f-pass').value.trim();
+  err.textContent = '';
+  if (!name) { err.textContent = '❌ Enter your Rust in-game name.'; return; }
+  if (!disc) { err.textContent = '❌ Enter your Discord username.'; return; }
+  if (!user) { err.textContent = '❌ Choose a login username.'; return; }
+  if (!pass || pass.length < 4) { err.textContent = '❌ Password must be at least 4 characters.'; return; }
+  const btn = document.getElementById('btn');
+  btn.disabled = true; btn.textContent = '⏳ Sending…';
+  try {
+    const res = await fetch('/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request: {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+        name, steam, discord: disc, username: user, password: pass,
+        submittedAt: Date.now(), status: 'pending'
+      }})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('form-area').style.display = 'none';
+      document.getElementById('ok-area').style.display = 'block';
+    } else {
+      err.textContent = '❌ ' + (data.msg || 'Error — try again.');
+      btn.disabled = false; btn.textContent = '⚔️ SEND REQUEST';
+    }
+  } catch(e) {
+    err.textContent = '❌ Could not reach server. Try again.';
+    btn.disabled = false; btn.textContent = '⚔️ SEND REQUEST';
+  }
+}
+document.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+</script>
+</body>
+</html>`);
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('RustLink OK\n');
 });
