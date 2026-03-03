@@ -74,9 +74,9 @@ const WSLib = require('ws');
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const C = {
   discord: {
-    token:    process.env.DISCORD_TOKEN,
-    clientId: process.env.DISCORD_CLIENT_ID,
-    guildId:  process.env.DISCORD_GUILD_ID,
+    token:    process.env.DISCORD_TOKEN    || 'MTQ3NzE0OTczMjEwMjIwOTU2Ng.GxLk5B.eucYXHNlZrcw1zhUh0bxQBfIhks5fxAGkOc6r4',
+    clientId: process.env.DISCORD_CLIENT_ID || '1477149732102209566',
+    guildId:  process.env.DISCORD_GUILD_ID  || '391225678370045953',
     channels: {
       raids:    process.env.CHANNEL_RAIDS,
       alarms:   process.env.CHANNEL_ALARMS,
@@ -89,10 +89,10 @@ const C = {
     },
   },
   rust: {
-    ip:      process.env.RUST_IP,
-    port:    parseInt(process.env.RUST_PORT) || 28082,
-    steamId: process.env.STEAM_ID,
-    token:   process.env.PLAYER_TOKEN,
+    ip:      process.env.RUST_IP       || '103.193.80.192',
+    port:    28082, // Rust+ companion port — ALWAYS 28082 (game port is 28017 but Rust+ uses 28082)
+    steamId: process.env.STEAM_ID      || '76561199410212066',
+    token:   process.env.PLAYER_TOKEN  || '-297506041',
   },
   voice: {
     channelId:   process.env.VOICE_CHANNEL_ID,
@@ -702,6 +702,23 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
     return;
   }
 
+  // GET /debug - check env var status at /debug
+  if (req.method === 'GET' && req.url === '/debug') {
+    var out = 'RUSTLINK BOT DEBUG\n';
+    out += '================\n';
+    out += 'RUST_IP      : ' + (C.rust.ip      || 'MISSING - set RUST_IP in Railway') + '\n';
+    out += 'RUST_PORT    : ' + (C.rust.port    || 'MISSING') + '\n';
+    out += 'STEAM_ID     : ' + (C.rust.steamId ? 'OK (set)' : 'MISSING - set STEAM_ID in Railway') + '\n';
+    out += 'PLAYER_TOKEN : ' + (C.rust.token   ? 'OK (set)' : 'MISSING - set PLAYER_TOKEN in Railway') + '\n';
+    out += 'Rust+Connect : ' + (rustConnected  ? 'YES - live data flowing' : 'NO - check credentials above') + '\n';
+    out += 'Discord      : ' + (discord.user   ? 'OK: ' + discord.user.tag : 'not ready') + '\n';
+    out += 'Members      : ' + clanMembers.length + '\n';
+    out += 'Uptime       : ' + Math.round(process.uptime()) + 's\n';
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end(out);
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('RustLink OK\n');
 });
@@ -1077,7 +1094,10 @@ function startRustClient() {
     return;
   }
 
-  rustplus = new RustPlus(C.rust.ip, C.rust.port, C.rust.steamId, C.rust.token);
+  // RustPlus needs steamId and token as numbers (token can be negative)
+  const rustSteamId = parseInt(C.rust.steamId) || C.rust.steamId;
+  const rustToken   = parseInt(C.rust.token)   || C.rust.token;
+  rustplus = new RustPlus(C.rust.ip, C.rust.port, rustSteamId, rustToken);
 
   rustplus.on('connected', async () => {
     console.log('[Rust+] Connected!');
