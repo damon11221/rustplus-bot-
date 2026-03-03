@@ -74,7 +74,7 @@ const WSLib = require('ws');
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const C = {
   discord: {
-    token:    process.env.DISCORD_TOKEN    || 'MTQ3NzE0OTczMjEwMjIwOTU2Ng.GxLk5B.eucYXHNlZrcw1zhUh0bxQBfIhks5fxAGkOc6r4',
+    token:    process.env.DISCORD_TOKEN,
     clientId: process.env.DISCORD_CLIENT_ID || '1477149732102209566',
     guildId:  process.env.DISCORD_GUILD_ID  || '391225678370045953',
     channels: {
@@ -1511,5 +1511,7 @@ httpServer.listen(C.wsPort, () => console.log(`[WS] Listening on port ${C.wsPort
 
 discord.login(C.discord.token).catch(e => {
   console.error('[Discord] Login failed:', e.message);
-  process.exit(1);
+  console.warn('[Discord] Continuing without Discord — starting Rust+ and HTTP server anyway.');
+  // Start Rust+ even without Discord
+  startRustClient();
 });
