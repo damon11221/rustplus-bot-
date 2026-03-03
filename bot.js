@@ -74,7 +74,7 @@ const WSLib = require('ws');
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const C = {
   discord: {
-    token:    process.env.DISCORD_TOKEN,
+    token:    process.env.DISCORD_TOKEN || 'MTQ3NzE0OTczMjEwMjIwOTU2Ng.GGfyln.jBP_Y0UNm0T62Eac9NwN79lCnKn6vsojkFWtig',
     clientId: process.env.DISCORD_CLIENT_ID || '1477149732102209566',
     guildId:  process.env.DISCORD_GUILD_ID  || '391225678370045953',
     channels: {
@@ -1070,21 +1070,44 @@ async function speakTTS(text) { ttsQueue.push(text); if (!ttsPlaying) drainTTS()
 async function drainTTS() {
   if (!ttsQueue.length) {
     ttsPlaying = false;
-    if (C.voice.autoLeave) setTimeout(() => { if (voiceConn) { voiceConn.destroy(); voiceConn = null; } }, 30000);
     return;
   }
   ttsPlaying = true;
   const text = ttsQueue.shift();
   const conn = await ensureVoice();
-  if (!conn) { ttsPlaying = false; return; }
+  if (!conn) { ttsPlaying = false; setTimeout(drainTTS, 2000); return; }
   try {
-    const tmp = '/tmp/rl_' + Date.now() + '.wav';
-    try { execSync(`espeak "${text.replace(/"/g,"'")}" -w ${tmp} --rate=140 2>/dev/null`); } catch {}
-    if (fs.existsSync(tmp)) {
-      audioPlayer.play(createAudioResource(tmp));
-      audioPlayer.once(AudioPlayerStatus.Idle, () => { try { fs.unlinkSync(tmp); } catch {} setTimeout(drainTTS, 400); });
-    } else { ttsPlaying = false; setTimeout(drainTTS, 400); }
-  } catch { ttsPlaying = false; setTimeout(drainTTS, 400); }
+    const tmp = '/tmp/rl_' + Date.now() + '.mp3';
+    const encoded = encodeURIComponent(text.slice(0, 200));
+    const ttsUrl = 'https://translate.google.com/translate_tts?ie=UTF-8&q=' + encoded + '&tl=en&client=tw-ob';
+    await new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(tmp);
+      require('https').get(ttsUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, res => {
+        if (res.statusCode !== 200) { reject(new Error('HTTP ' + res.statusCode)); return; }
+        res.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+      }).on('error', reject).setTimeout(8000, function(){ this.destroy(); reject(new Error('timeout')); });
+    });
+    const stat = fs.existsSync(tmp) ? fs.statSync(tmp) : null;
+    if (stat && stat.size > 500) {
+      const resource = createAudioResource(tmp);
+      audioPlayer.play(resource);
+      conn.subscribe(audioPlayer);
+      audioPlayer.once(AudioPlayerStatus.Idle, () => {
+        try { fs.unlinkSync(tmp); } catch {}
+        setTimeout(drainTTS, 500);
+      });
+    } else {
+      try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
+      console.warn('[TTS] Empty response, skipping');
+      ttsPlaying = false;
+      setTimeout(drainTTS, 400);
+    }
+  } catch(e) {
+    console.error('[TTS] Error:', e.message);
+    ttsPlaying = false;
+    setTimeout(drainTTS, 400);
+  }
 }
 
 // ─── RUST+ ───────────────────────────────────────────────────────────────────
