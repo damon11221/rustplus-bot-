@@ -353,20 +353,6 @@ function startBMPolling() {
 
 // ─── JOIN REQUESTS STORE (server-side) ───────────────────────────────────────
 // Stored in memory + file so all dashboards share the same data
-// ─── SHARED DASHBOARD CONFIG (BattleMetrics ID, etc.) ────────────────────────
-const DASHBOARD_CONFIG_FILE = './dashboard_config.json';
-let dashboardConfig = { bmServerId: '', updatedAt: null };
-try {
-  if (fs.existsSync(DASHBOARD_CONFIG_FILE)) {
-    dashboardConfig = { ...dashboardConfig, ...JSON.parse(fs.readFileSync(DASHBOARD_CONFIG_FILE, 'utf8')) };
-    console.log('[Config] Loaded dashboard config');
-  }
-} catch(e) { console.error('[Config] Load error:', e.message); }
-function saveDashboardConfig() {
-  try { fs.writeFileSync(DASHBOARD_CONFIG_FILE, JSON.stringify(dashboardConfig, null, 2)); }
-  catch(e) { console.error('[Config] Save error:', e.message); }
-}
-
 const JOIN_REQS_FILE = './join_requests.json';
 let joinRequests = [];
 function loadJoinRequests() {
@@ -716,35 +702,6 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
     return;
   }
 
-  // ── GET /config — fetch shared dashboard config ──────────────────────────
-  if (req.method === 'GET' && req.url === '/config') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, config: dashboardConfig }));
-    return;
-  }
-
-  // ── POST /config — save shared dashboard config ───────────────────────────
-  if (req.method === 'POST' && req.url === '/config') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; if (body.length > 10000) req.destroy(); });
-    req.on('end', () => {
-      try {
-        const data = JSON.parse(body);
-        if (data.bmServerId !== undefined) dashboardConfig.bmServerId = String(data.bmServerId).trim();
-        dashboardConfig.updatedAt = Date.now();
-        saveDashboardConfig();
-        // Broadcast updated config to all dashboards
-        wsBroadcast({ type: 'stateUpdate', data: buildState() });
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
-      } catch(e) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, msg: e.message }));
-      }
-    });
-    return;
-  }
-
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('RustLink OK\n');
 });
@@ -1032,7 +989,6 @@ function buildState() {
       approvedAt: m.approvedAt, lastLogin: m.lastLogin,
     })),
     lastUpdate: Date.now(),
-    dashboardConfig: { ...dashboardConfig },
   };
 }
 
