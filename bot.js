@@ -74,7 +74,7 @@ const WSLib = require('ws');
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const C = {
   discord: {
-    token:    process.env.DISCORD_TOKEN || 'MTQ3NzE0OTczMjEwMjIwOTU2Ng.GGfyln.jBP_Y0UNm0T62Eac9NwN79lCnKn6vsojkFWtig',
+    token:    process.env.DISCORD_TOKEN,
     clientId: process.env.DISCORD_CLIENT_ID || '1477149732102209566',
     guildId:  process.env.DISCORD_GUILD_ID  || '391225678370045953',
     channels: {
@@ -386,6 +386,77 @@ function saveClanMembersFile() {
   catch(e) { console.warn('[Members] Save error:', e.message); }
 }
 loadClanMembers();
+
+
+// PLAYTIME & LEVELING
+const PLAYTIME_FILE = './playtime.json';
+let playtimeData = {};
+const SECONDS_PER_LEVEL = 8 * 3600;
+let chatHistory = [];
+
+function loadPlaytime() {
+  try {
+    if (fs.existsSync(PLAYTIME_FILE)) {
+      playtimeData = JSON.parse(fs.readFileSync(PLAYTIME_FILE, 'utf8'));
+      console.log('[Playtime] Loaded', Object.keys(playtimeData).length, 'entries');
+    }
+  } catch(e) { console.warn('[Playtime] Load error:', e.message); }
+}
+
+function savePlaytime() {
+  try { fs.writeFileSync(PLAYTIME_FILE, JSON.stringify(playtimeData, null, 2)); }
+  catch(e) { console.warn('[Playtime] Save error:', e.message); }
+}
+
+function getMemberLevel(idOrUsername) {
+  let entry = playtimeData[idOrUsername];
+  if (!entry) {
+    entry = Object.values(playtimeData).find(p => p.username === idOrUsername || p.name === idOrUsername);
+  }
+  if (!entry) return 0;
+  const secs = entry.totalSeconds || 0;
+  return Math.floor(secs / SECONDS_PER_LEVEL);
+}
+
+function updatePlaytimeOnline(steamId, name) {
+  const key = steamIdStr(steamId) || String(steamId);
+  if (!key) return;
+  if (!playtimeData[key]) playtimeData[key] = { steamId: key, name, username: name, totalSeconds: 0, sessionStart: null };
+  const entry = playtimeData[key];
+  entry.name = name || entry.name;
+  if (!entry.sessionStart) { entry.sessionStart = Date.now(); console.log('[Playtime] Session start:', entry.name); }
+}
+
+function updatePlaytimeOffline(steamId) {
+  const key = steamIdStr(steamId) || String(steamId);
+  const entry = playtimeData[key];
+  if (!entry || !entry.sessionStart) return;
+  const seconds = Math.floor((Date.now() - entry.sessionStart) / 1000);
+  const oldLevel = Math.floor((entry.totalSeconds || 0) / SECONDS_PER_LEVEL);
+  entry.totalSeconds = (entry.totalSeconds || 0) + seconds;
+  const newLevel = Math.floor(entry.totalSeconds / SECONDS_PER_LEVEL);
+  entry.sessionStart = null;
+  savePlaytime();
+  if (newLevel > oldLevel) {
+    wsBroadcast({ type: 'levelUp', name: entry.name, username: entry.username || entry.name, level: newLevel, steamId: key });
+  }
+}
+
+function buildPlaytimeData() {
+  const now = Date.now();
+  return Object.values(playtimeData).map(p => {
+    const liveSecs = p.sessionStart ? Math.floor((now - p.sessionStart) / 1000) : 0;
+    const total = (p.totalSeconds || 0) + liveSecs;
+    const level = Math.floor(total / SECONDS_PER_LEVEL);
+    return {
+      steamId: p.steamId, name: p.name, username: p.username || p.name,
+      totalSeconds: total, level, progressPct: Math.floor((total % SECONDS_PER_LEVEL) / SECONDS_PER_LEVEL * 100),
+      online: !!(p.sessionStart), hoursPlayed: Math.floor(total / 3600),
+    };
+  }).sort((a,b) => b.totalSeconds - a.totalSeconds);
+}
+
+loadPlaytime();
 
 // ─── RUNTIME STATE ───────────────────────────────────────────────────────────
 let rustplus      = null;
@@ -729,6 +800,8 @@ wss.on('connection', ws => {
   console.log('[WS] Dashboard connected');
   wsClients.add(ws);
   send(ws, { type: 'fullState', data: buildState() });
+  send(ws, { type: 'chatHistory', messages: chatHistory.slice(-50) });
+  send(ws, { type: 'playtimeData', data: buildPlaytimeData() });
   ws.on('message', raw => { try { handleDashMsg(ws, JSON.parse(raw)); } catch {} });
   ws.on('close',   () => wsClients.delete(ws));
   ws.on('error',   () => wsClients.delete(ws));
@@ -864,6 +937,12 @@ async function handleDashMsg(ws, msg) {
         clanMembers = clanMembers.filter(m => m.id !== id);
         saveClanMembersFile();
         joinRequests = joinRequests.filter(r => r.id !== id);
+      } else if (action === 'promote') {
+        const cm = clanMembers.find(m => m.id === id);
+        if (cm) { cm.role = 'admin'; saveClanMembersFile(); console.log('[Members] Promoted', cm.name, 'to admin'); }
+      } else if (action === 'demote') {
+        const cm = clanMembers.find(m => m.id === id);
+        if (cm) { cm.role = 'member'; saveClanMembersFile(); console.log('[Members] Demoted', cm.name, 'to member'); }
       }
       saveJoinRequestsFile();
       wsBroadcast({ type:'stateUpdate', data:buildState() });
@@ -923,6 +1002,34 @@ async function handleDashMsg(ws, msg) {
       } catch(e) { send(ws, { type:'error', message:'Kick failed: '+e.message }); }
       break;
     }
+
+    case 'chatMessage': {
+      // Clan chat - broadcast to all dashboard clients
+      const { username, text, memberId } = msg;
+      if (!text || !text.trim()) break;
+      // Get member level from playtime
+      const level = getMemberLevel(memberId || username);
+      const chatMsg = {
+        type: 'chatBroadcast',
+        username: username || 'Unknown',
+        memberId: memberId || '',
+        level,
+        text: text.slice(0, 500),
+        ts: Date.now()
+      };
+      wsBroadcast(chatMsg);
+      // Save to chat history (keep last 200)
+      chatHistory.push(chatMsg);
+      if (chatHistory.length > 200) chatHistory.shift();
+      break;
+    }
+
+    case 'getPlaytime': {
+      // Send all member playtime/levels
+      send(ws, { type: 'playtimeData', data: buildPlaytimeData() });
+      break;
+    }
+
   }
 }
 
@@ -1070,44 +1177,21 @@ async function speakTTS(text) { ttsQueue.push(text); if (!ttsPlaying) drainTTS()
 async function drainTTS() {
   if (!ttsQueue.length) {
     ttsPlaying = false;
+    if (C.voice.autoLeave) setTimeout(() => { if (voiceConn) { voiceConn.destroy(); voiceConn = null; } }, 30000);
     return;
   }
   ttsPlaying = true;
   const text = ttsQueue.shift();
   const conn = await ensureVoice();
-  if (!conn) { ttsPlaying = false; setTimeout(drainTTS, 2000); return; }
+  if (!conn) { ttsPlaying = false; return; }
   try {
-    const tmp = '/tmp/rl_' + Date.now() + '.mp3';
-    const encoded = encodeURIComponent(text.slice(0, 200));
-    const ttsUrl = 'https://translate.google.com/translate_tts?ie=UTF-8&q=' + encoded + '&tl=en&client=tw-ob';
-    await new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(tmp);
-      require('https').get(ttsUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, res => {
-        if (res.statusCode !== 200) { reject(new Error('HTTP ' + res.statusCode)); return; }
-        res.pipe(file);
-        file.on('finish', () => { file.close(); resolve(); });
-      }).on('error', reject).setTimeout(8000, function(){ this.destroy(); reject(new Error('timeout')); });
-    });
-    const stat = fs.existsSync(tmp) ? fs.statSync(tmp) : null;
-    if (stat && stat.size > 500) {
-      const resource = createAudioResource(tmp);
-      audioPlayer.play(resource);
-      conn.subscribe(audioPlayer);
-      audioPlayer.once(AudioPlayerStatus.Idle, () => {
-        try { fs.unlinkSync(tmp); } catch {}
-        setTimeout(drainTTS, 500);
-      });
-    } else {
-      try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
-      console.warn('[TTS] Empty response, skipping');
-      ttsPlaying = false;
-      setTimeout(drainTTS, 400);
-    }
-  } catch(e) {
-    console.error('[TTS] Error:', e.message);
-    ttsPlaying = false;
-    setTimeout(drainTTS, 400);
-  }
+    const tmp = '/tmp/rl_' + Date.now() + '.wav';
+    try { execSync(`espeak "${text.replace(/"/g,"'")}" -w ${tmp} --rate=140 2>/dev/null`); } catch {}
+    if (fs.existsSync(tmp)) {
+      audioPlayer.play(createAudioResource(tmp));
+      audioPlayer.once(AudioPlayerStatus.Idle, () => { try { fs.unlinkSync(tmp); } catch {} setTimeout(drainTTS, 400); });
+    } else { ttsPlaying = false; setTimeout(drainTTS, 400); }
+  } catch { ttsPlaying = false; setTimeout(drainTTS, 400); }
 }
 
 // ─── RUST+ ───────────────────────────────────────────────────────────────────
@@ -1215,6 +1299,16 @@ async function handleTeamChanged() {
 
   // Update spy tracker with latest team data
   updateSpyFromTeam(t.members);
+
+  // Track playtime for all team members
+  t.members.forEach(m => {
+    const sid = steamIdStr(m.steamId);
+    if (!sid) return;
+    if (m.isOnline) updatePlaytimeOnline(sid, m.name);
+    else updatePlaytimeOffline(sid);
+  });
+  wsBroadcast({ type: 'playtimeData', data: buildPlaytimeData() });
+
 
   t.members.forEach(m => {
     const key  = steamIdStr(m.steamId);
