@@ -797,8 +797,9 @@ const wss       = new WSLib.Server({ server: httpServer });
 const wsClients = new Set();
 
 wss.on('connection', ws => {
-  console.log('[WS] Dashboard connected');
+  console.log('[WS] Dashboard connected —', wsClients.size + 1, 'client(s)');
   wsClients.add(ws);
+  // Send initial state — frontend will also send requestState on open, which is fine
   send(ws, { type: 'fullState', data: buildState() });
   send(ws, { type: 'chatHistory', messages: chatHistory.slice(-50) });
   send(ws, { type: 'playtimeData', data: buildPlaytimeData() });
@@ -861,7 +862,8 @@ async function handleDashMsg(ws, msg) {
     }
 
     case 'requestState':
-      send(ws, { type: 'fullState', data: buildState() });
+      // Only re-send state if client explicitly requests a refresh (e.g. after reconnect delay)
+      send(ws, { type: 'stateUpdate', data: buildState() });
       break;
 
     case 'submitJoinRequest': {
